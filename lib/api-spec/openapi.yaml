@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: tokens
+    description: Solana token catalog search
 paths:
   /healthz:
     get:
@@ -24,6 +26,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /tokens/search:
+    get:
+      operationId: searchSolanaTokens
+      tags: [tokens]
+      summary: Search Solana tokens
+      description: Searches Jupiter Tokens API V2 by token name, ticker, or mint address. The Jupiter API key remains server-side.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Token name, ticker, or mint address to search.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      responses:
+        "200":
+          description: Matching token metadata returned by Jupiter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenSearchResponse"
+        "400":
+          description: Invalid search query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Jupiter search is unavailable or rejected the server key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Jupiter API key is not configured or upstream rate limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: Jupiter search timed out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +81,39 @@ components:
           type: string
       required:
         - status
+    TokenCatalogToken:
+      type: object
+      properties:
+        mintAddress:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        ticker:
+          type: string
+          minLength: 1
+        iconUrl:
+          type: ["string", "null"]
+          format: uri
+      required:
+        - mintAddress
+        - name
+        - ticker
+    TokenSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TokenCatalogToken"
+      required:
+        - results
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
 

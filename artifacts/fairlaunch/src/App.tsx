@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { AlertCircle, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock3, ExternalLink, FileImage, Info, Plus, Search, ShieldCheck, Upload, Users, Wallet, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock3, ExternalLink, FileImage, Image as ImageIcon, Info, Plus, Search, ShieldCheck, Upload, Users, Wallet, X } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Form, FormField } from '@/components/ui/form';
+import { getSearchSolanaTokensQueryKey, useSearchSolanaTokens } from '@workspace/api-client-react';
 import { Activity, Launch, SEED_ACTIVITIES, SEED_LAUNCHES, shortAddress } from './data';
 import {
   DEFAULT_HOLDER_REWARD_BPS,
@@ -20,7 +21,7 @@ import {
   type LaunchProposalFormInput,
   type LaunchProposalInput,
 } from './lib/launch-validation';
-import { filterTokenCatalog, unconfiguredTokenCatalog, type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
+import { type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
 import { unconfiguredPairCompatibilityServer, type PairCompatibilityResult } from './lib/pair-compatibility';
 import './proposal.css';
 
@@ -35,6 +36,14 @@ function readStorage<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function CatalogTokenIcon({ token }: { token: TokenCatalogEntry }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  if (!token.iconUrl || imageFailed) {
+    return <span className="catalog-token-icon catalog-icon-placeholder" aria-hidden="true"><ImageIcon size={15} /></span>;
+  }
+  return <span className="catalog-token-icon"><img src={token.iconUrl} alt="" onError={() => setImageFailed(true)} /></span>;
 }
 
 function usePersistedState<T>(key: string, initial: T, normalize?: (value: T) => T) {
@@ -235,10 +244,7 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
   const [submittedProposal, setSubmittedProposal] = useState<LaunchProposalInput | null>(null);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [tokenSearch, setTokenSearch] = useState('');
-  const [catalogTokens, setCatalogTokens] = useState<TokenCatalogEntry[]>([]);
-  const [catalogConnected, setCatalogConnected] = useState(false);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogError, setCatalogError] = useState('');
+  const [debouncedTokenSearch, setDebouncedTokenSearch] = useState('');
   const [selectedToken, setSelectedToken] = useState<SelectedPairToken | null>(null);
   const [manualMint, setManualMint] = useState('');
   const [manualMintTouched, setManualMintTouched] = useState(false);
@@ -264,6 +270,32 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
   const mintValue = form.watch('pairMintAddress') ?? '';
   const imageData = form.watch('imageUrl') ?? '';
   const validManualMint = isValidSolanaMintAddress(manualMint);
+  const searchText = tokenSearch.trim();
+  const searchReady = tokenDialogOpen && Boolean(debouncedTokenSearch) && debouncedTokenSearch === searchText;
+  const catalogQuery = useSearchSolanaTokens(
+    { query: debouncedTokenSearch },
+    {
+      query: {
+        enabled: searchReady,
+        queryKey: getSearchSolanaTokensQueryKey({ query: debouncedTokenSearch }),
+        staleTime: 30_000,
+        retry: 1,
+      },
+    },
+  );
+  const catalogTokens = catalogQuery.data?.results ?? [];
+  const catalogLoading = tokenDialogOpen && Boolean(searchText) && (!searchReady || catalogQuery.isFetching);
+  const catalogError = catalogQuery.error?.data?.error
+    ?? (catalogQuery.isError ? 'Could not connect to Jupiter. Check your connection and try again.' : '');
+
+  useEffect(() => {
+    if (!tokenDialogOpen || !searchText) {
+      setDebouncedTokenSearch('');
+      return;
+    }
+    const timer = window.setTimeout(() => setDebouncedTokenSearch(searchText), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchText, tokenDialogOpen]);
 
   useEffect(() => {
     if (!tokenDialogOpen) return;
@@ -294,26 +326,6 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
       document.body.style.overflow = previousOverflow;
     };
   }, [tokenDialogOpen]);
-
-  useEffect(() => {
-    if (!tokenDialogOpen) return;
-    let alive = true;
-    setCatalogLoading(true);
-    setCatalogError('');
-    const timer = window.setTimeout(() => {
-      unconfiguredTokenCatalog.search(tokenSearch).then(result => {
-        if (!alive) return;
-        setCatalogConnected(result.status === 'connected');
-        setCatalogTokens(result.status === 'connected' ? filterTokenCatalog(result.tokens, tokenSearch) : []);
-      }).catch(() => {
-        if (!alive) return;
-        setCatalogTokens([]);
-        setCatalogConnected(false);
-        setCatalogError('The token catalog could not be loaded. Try another search or use a mint address.');
-      }).finally(() => { if (alive) setCatalogLoading(false); });
-    }, 150);
-    return () => { alive = false; window.clearTimeout(timer); };
-  }, [tokenDialogOpen, tokenSearch]);
 
   useEffect(() => {
     if (!selectedToken || !isPairType(pairTypeValue)) {
@@ -465,7 +477,7 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
           <FormField control={form.control} name="pairType" render={({ field, fieldState }) => <div className="field"><label>Trading pair type <span className="required-mark">*</span></label><div className="pair-options" role="radiogroup" aria-label="Trading pair type">{PAIR_TYPE_OPTIONS.map((option, index) => <button key={option.value} type="button" role="radio" aria-checked={field.value === option.value} className={`pair-option ${field.value === option.value ? 'selected' : ''}`} onClick={() => field.onChange(option.value)} data-testid={`button-pair-${option.value}`}><span className="pair-option-mark">{field.value === option.value ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span><span><strong>{option.label}</strong><small>{option.value === 'supported-memecoin' ? 'A community meme token' : option.value === 'tokenized-stock' ? 'A tokenized equity asset' : 'Another supported pair asset'}</small></span></button>)}</div><div className="field-hint">Choose the category that best describes the pair asset.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
           <div className="token-picker-block">
             <div className="field-label-row"><label>Pair token <span className="required-mark">*</span></label><span className="field-hint inline-hint">Catalog lookup</span></div>
-            <button ref={tokenTrigger} type="button" className={`token-picker-button ${selectedToken ? 'has-token' : ''}`} onClick={() => { setTokenSearch(''); setCatalogTokens([]); setCatalogConnected(false); setManualMint(selectedToken?.source === 'manual' ? selectedToken.mintAddress : ''); setTokenDialogOpen(true); }} aria-haspopup="dialog" data-testid="button-select-pair-token"><span className="token-picker-icon"><Search size={16} /></span><span className="token-picker-text"><strong>{selectedToken?.source === 'catalog' ? `${selectedToken.name} ($${selectedToken.ticker})` : selectedToken ? 'Manual mint selected' : 'Select a token'}</strong><small>{selectedToken ? selectedToken.mintAddress : 'Search by name, ticker, or mint address'}</small></span><span className="picker-arrow"><ArrowUpRight size={15} /></span></button>
+            <button ref={tokenTrigger} type="button" className={`token-picker-button ${selectedToken ? 'has-token' : ''}`} onClick={() => { setTokenSearch(''); setManualMint(selectedToken?.source === 'manual' ? selectedToken.mintAddress : ''); setTokenDialogOpen(true); }} aria-haspopup="dialog" data-testid="button-select-pair-token"><span className="token-picker-icon"><Search size={16} /></span><span className="token-picker-text"><strong>{selectedToken?.source === 'catalog' ? `${selectedToken.name} ($${selectedToken.ticker})` : selectedToken ? 'Manual mint selected' : 'Select a token'}</strong><small>{selectedToken ? selectedToken.mintAddress : 'Search by name, ticker, or mint address'}</small></span><span className="picker-arrow"><ArrowUpRight size={15} /></span></button>
             <FormField control={form.control} name="pairMintAddress" render={({ field, fieldState }) => <><input type="hidden" {...field} data-testid="input-pair-mint-address" />{selectedToken && <div className="selected-token-status"><span className="mono">{selectedToken.mintAddress}</span><span className="mint-status">{compatibility.status === 'not-checked' ? 'Not checked' : compatibility.status}</span></div>}{fieldState.error && <p className="error-line" role="alert" data-testid="error-pair-mint">{fieldState.error.message}</p>}</>} />
           </div>
           <div className="pair-validation-note compact-validation" data-testid="notice-pair-validation">Mint format checks only validate Base58 encoding and 32-byte length. Token existence, pair support, and Pump.fun eligibility are not checked.</div>
@@ -494,13 +506,20 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
         <div className="fu-modal-top"><div><span className="modal-kicker">PAIR TOKEN / CATALOG</span><h2 id="token-dialog-title">Select a token</h2></div><button type="button" className="modal-close" onClick={() => { setTokenDialogOpen(false); tokenTrigger.current?.focus(); }} aria-label="Close token selector" data-testid="button-close-token-dialog"><X size={18} /></button></div>
         <p className="modal-copy">Find a pair token by its name, ticker, or Solana mint address.</p>
         <label className="token-search"><Search size={16} /><input ref={catalogSearchInput} value={tokenSearch} onChange={event => setTokenSearch(event.target.value)} placeholder="Search name, ticker, or mint" aria-label="Search token catalog" data-testid="input-token-search" /></label>
-        {catalogLoading ? <p className="catalog-empty" role="status" data-testid="status-catalog-loading">Loading token catalog…</p> : catalogError ? <p className="catalog-empty" role="alert" data-testid="error-token-catalog">{catalogError}</p> : catalogConnected && catalogTokens.length > 0 ? <div className="catalog-results" aria-label="Token catalog results">{catalogTokens.map(token => <button type="button" className="catalog-result" key={token.mintAddress} onClick={() => chooseToken({ ...token, source: 'catalog' })} data-testid={`button-catalog-token-${token.mintAddress}`}><span className="catalog-token-icon">{token.iconUrl ? <img src={token.iconUrl} alt="" /> : token.ticker.slice(0, 2)}</span><span><strong>{token.name} <small>${token.ticker}</small></strong><span className="mono" title={token.mintAddress}>{shortAddress(token.mintAddress)}</span></span></button>)}</div> :
-          <div className="catalog-empty" role="status" data-testid="status-catalog-empty"><span className="catalog-empty-icon"><Search size={20} /></span><strong>{catalogConnected ? 'No matching tokens' : 'Token catalog isn’t connected'}</strong><p>{catalogConnected ? 'No catalog entries match this search.' : 'No token results are available in this prototype. Nothing has been searched on-chain.'}</p></div>}
+        <p className="catalog-warning" data-testid="notice-jupiter-search"><Info size={13} />Jupiter search results are not confirmation of Pump.fun pair or reward compatibility.</p>
+        {catalogLoading ? <div className="catalog-empty" role="status" data-testid="status-catalog-loading"><span className="catalog-spinner" aria-hidden="true" /><strong>Searching Jupiter tokens…</strong></div> :
+          searchReady && catalogQuery.isError ? <div className="catalog-empty catalog-error" role="alert" data-testid="error-token-catalog"><span className="catalog-empty-icon"><AlertCircle size={18} /></span><strong>Couldn’t connect to Jupiter</strong><p>{catalogError}</p><button type="button" className="button button-quiet" onClick={() => void catalogQuery.refetch()} data-testid="button-retry-token-search">Try again</button></div> :
+          searchReady && catalogQuery.isSuccess && catalogTokens.length > 0 ? <div className="catalog-results" aria-label="Token catalog results">{catalogTokens.map(token => {
+            const tokenEntry: TokenCatalogEntry = { mintAddress: token.mintAddress, name: token.name, ticker: token.ticker, ...(token.iconUrl ? { iconUrl: token.iconUrl } : {}) };
+            return <button type="button" className="catalog-result" key={token.mintAddress} onClick={() => chooseToken({ ...tokenEntry, source: 'catalog' })} data-testid={`button-catalog-token-${token.mintAddress}`}><CatalogTokenIcon token={tokenEntry} /><span><strong>{token.name} <small>${token.ticker}</small></strong><span className="mono" title={token.mintAddress}>{shortAddress(token.mintAddress)}</span></span></button>;
+          })}</div> :
+          searchReady && catalogQuery.isSuccess ? <div className="catalog-empty" role="status" data-testid="status-catalog-empty"><span className="catalog-empty-icon"><Search size={20} /></span><strong>Nothing found</strong><p>No Jupiter token matches this name, ticker, or mint address.</p></div> :
+          <div className="catalog-empty" role="status" data-testid="status-catalog-prompt"><span className="catalog-empty-icon"><Search size={20} /></span><strong>Search Solana tokens</strong><p>Enter a token name, ticker, or mint address to search Jupiter.</p></div>}
         <div className="advanced-mint dialog-advanced">
           <button className="advanced-toggle" type="button" aria-expanded={showAdvancedMint} onClick={() => setShowAdvancedMint(value => !value)} data-testid="button-toggle-manual-mint"><span><span className="advanced-bracket">+</span><span><strong>Advanced</strong><small>Enter a mint address manually</small></span></span><ChevronDown size={16} className={showAdvancedMint ? 'chevron-open' : ''} /></button>
           {showAdvancedMint && <div className="advanced-content"><div className="field"><div className="field-label-row"><label htmlFor="manual-pair-mint">Pair token mint address</label>{manualMintTouched && manualMint && <span className={`mint-status ${validManualMint ? 'valid' : 'invalid'}`}>{validManualMint ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}{validManualMint ? 'Format valid · unverified' : 'Invalid format'}</span>}</div><input id="manual-pair-mint" value={manualMint} onChange={event => { setManualMint(event.target.value); setManualMintTouched(true); }} onBlur={() => setManualMintTouched(true)} inputMode="text" autoComplete="off" spellCheck={false} minLength={32} maxLength={44} placeholder="Solana Base58 mint address" aria-invalid={manualMintTouched && !!manualMint && !validManualMint} data-testid="input-manual-mint" /><div className="field-hint">Checks Base58 encoding and 32-byte length only. No network lookup is performed.</div>{manualMintTouched && manualMint && !validManualMint && <p className="error-line" role="alert">Enter a valid 32-byte Solana Base58 mint address.</p>}</div><div className="unverified-note"><ShieldCheck size={15} /><span><strong>Format check only</strong><small>This address is not checked for existence, pair support, or reward eligibility.</small></span></div><button type="button" className="button button-primary manual-select-button" disabled={!validManualMint} onClick={() => chooseToken({ source: 'manual', mintAddress: manualMint.trim() })} data-testid="button-use-manual-mint">Use this mint</button></div>}
         </div>
-        <div className="fu-modal-footer"><span><Info size={13} />Catalog connection is not available in this prototype.</span><button type="button" className="button button-quiet" onClick={() => setShowAdvancedMint(true)} data-testid="button-enter-mint-manually">Enter mint manually</button></div>
+        <div className="fu-modal-footer"><span><Info size={13} />Search metadata does not verify Pump.fun compatibility.</span><button type="button" className="button button-quiet" onClick={() => setShowAdvancedMint(true)} data-testid="button-enter-mint-manually">Enter mint manually</button></div>
       </section>
     </div>}
   </main>;

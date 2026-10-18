@@ -141,6 +141,13 @@
 .proposal-update .catalog-empty-icon { display:grid; place-items:center; width:42px; height:42px; margin-bottom:12px; border:1px solid #37423c; border-radius:12px; color:#74c99b; background:#19201c; }
 .proposal-update .catalog-empty strong { color:#d2d9d5; font-size:12px; }
 .proposal-update .catalog-empty p { max-width:270px; margin:7px 0 0; color:#a0a8b1; font-size:10px; line-height:1.6; }
+.proposal-update .catalog-warning { display:flex; align-items:flex-start; gap:7px; margin:10px 1px 0; color:#a7b0a9; font-size:9px; line-height:1.55; }
+.proposal-update .catalog-warning svg { flex:none; margin-top:1px; color:#75c99a; }
+.proposal-update .catalog-empty.catalog-error { border-color:#55413d; background:#1a1718; }
+.proposal-update .catalog-empty.catalog-error .catalog-empty-icon { color:#e3a08b; border-color:#604742; background:#241b1b; }
+.proposal-update .catalog-empty.catalog-error .button { margin-top:13px; }
+.proposal-update .catalog-spinner { width:19px; height:19px; margin:0 0 11px; border:2px solid #334039; border-top-color:#66dfa5; border-radius:50%; animation:fu-spin .75s linear infinite; }
+.proposal-update .catalog-icon-placeholder { color:#919ba5; background:#1b2027; border-color:#363d46; }
 .proposal-update .catalog-results { display:grid; gap:6px; max-height:190px; overflow:auto; margin-top:12px; }
 .proposal-update .catalog-result { display:flex; align-items:center; gap:10px; width:100%; padding:9px; border:1px solid #303842; border-radius:7px; color:#dce3de; background:#12171a; text-align:left; cursor:pointer; }
 .proposal-update .catalog-result:hover { border-color:#55dfa1; }
@@ -176,6 +183,7 @@
 @keyframes fu-fade { from { opacity:0 } to { opacity:1 } }
 @keyframes fu-rise { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
 @keyframes fu-reveal { from { opacity:0; transform:translateY(-3px) } to { opacity:1; transform:translateY(0) } }
+@keyframes fu-spin { to { transform:rotate(360deg) } }
 @media (max-width:900px) {
   .proposal-update .proposal-layout { grid-template-columns:1fr; }
   .proposal-update .proposal-aside { position:static; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
