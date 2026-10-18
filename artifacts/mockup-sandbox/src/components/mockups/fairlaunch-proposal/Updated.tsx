@@ -9,7 +9,6 @@ import {
   Compass,
   FileImage,
   Info,
-  LayoutGrid,
   Search,
   ShieldCheck,
   Sparkles,
@@ -80,16 +79,10 @@ function pairTypeForCategory(category: PairAssetCategory): PairType {
 }
 
 function pairTypeLabel(pairType: PairType | undefined) {
-  if (pairType === 'tokenized-stock') return 'Токенизированная акция';
-  if (pairType === 'supported-memecoin') return 'Поддерживаемый мемкоин';
-  if (pairType === 'other-supported-token') return 'Другой поддерживаемый токен';
-  return 'Не выбран';
-}
-
-function groupLabel(group: PairAssetGroup) {
-  if (group === 'xstocks') return 'xStocks';
-  if (group === 'backpack') return 'Backpack';
-  return 'Crypto';
+  if (pairType === 'tokenized-stock') return 'Tokenized stock';
+  if (pairType === 'supported-memecoin') return 'Supported memecoin';
+  if (pairType === 'other-supported-token') return 'Other supported token';
+  return 'Not selected';
 }
 
 function shortMint(mint: string) {
@@ -116,7 +109,7 @@ function validMint(value: string) {
 
 function CatalogGlyph({ ticker }: { ticker: string }) {
   return (
-    <span className="pr-asset-glyph" aria-label="Официальная иконка не указана">
+    <span className="pr-asset-glyph" aria-label="No official icon provided">
       {ticker.slice(0, 1).toUpperCase()}
     </span>
   );
@@ -168,7 +161,7 @@ export function Updated() {
     if (!validMint(manualMint)) return;
     setSelectedAsset({
       source: 'manual',
-      name: 'Пользовательский mint',
+      name: 'Custom mint',
       ticker: 'MANUAL',
       mintAddress: manualMint.trim(),
       category: 'other',
@@ -192,71 +185,71 @@ export function Updated() {
   return (
     <div className="app-shell fairlaunch-concept">
       <aside className="pr-sidebar">
-        <a href="#" className="pr-brand" aria-label="Fairlaunch, главная">
+        <a href="#" className="pr-brand" aria-label="Fairlaunch home">
           <span className="pr-brand-mark">f</span>
           <span>fairlaunch</span>
         </a>
-        <nav className="pr-nav" aria-label="Основная навигация">
-          <span className="pr-nav-label">Рабочее пространство</span>
-          <a className="pr-nav-item" href="#"><Compass size={16} />Обзор</a>
-          <a className="pr-nav-item" href="#"><Search size={16} />Исследовать</a>
-          <a className="pr-nav-item active" href="#" aria-current="page"><Sparkles size={16} />Предложить</a>
-          <a className="pr-nav-item" href="#"><Activity size={16} />Активность</a>
-          <span className="pr-nav-label pr-nav-label-lower">Справка</span>
-          <a className="pr-nav-item" href="#"><CircleHelp size={16} />Документация</a>
+        <nav className="pr-nav" aria-label="Main navigation">
+          <span className="pr-nav-label">Workspace</span>
+          <a className="pr-nav-item" href="#"><Compass size={16} />Overview</a>
+          <a className="pr-nav-item" href="#"><Search size={16} />Explore</a>
+          <a className="pr-nav-item active" href="#" aria-current="page"><Sparkles size={16} />Propose</a>
+          <a className="pr-nav-item" href="#"><Activity size={16} />Activity</a>
+          <span className="pr-nav-label pr-nav-label-lower">Resources</span>
+          <a className="pr-nav-item" href="#"><CircleHelp size={16} />Documentation</a>
         </nav>
         <div className="pr-sidebar-note">
           <span className="pr-sidebar-note-icon"><ShieldCheck size={15} /></span>
-          <span><strong>Демо-прототип</strong><small>Без кошелька и транзакций</small></span>
+          <span><strong>Preview prototype</strong><small>No wallet or transactions</small></span>
         </div>
       </aside>
 
       <div className="pr-workspace">
         <header className="pr-topbar">
-          <div className="pr-breadcrumb"><span>Предложение</span><span>/</span><strong>Торговая пара</strong></div>
+          <div className="pr-breadcrumb"><span>Proposal</span><span>/</span><strong>Trading pair</strong></div>
           <div className="pr-topbar-actions">
             <span className="pr-demo-status"><i /> DEMO MODE</span>
-            <button type="button" className="pr-wallet-button" disabled title="Подключение кошелька не входит в прототип">
-              <Wallet size={14} />Подключить
+            <button type="button" className="pr-wallet-button" disabled title="Wallet connection is not part of this prototype">
+              <Wallet size={14} />Connect
             </button>
           </div>
         </header>
 
         <main className="pr-page">
           <div className="pr-step-heading">
-            <div className="pr-step-eyebrow">ШАГ 1 <span>/</span> 3</div>
-            <h1>Выбери торговую пару</h1>
-            <p>Твой токен будет торговаться против выбранного актива, а награды будут распределяться между подходящими держателями.</p>
-            <div className="pr-progress" aria-label="Шаг 1 из 3">
+            <div className="pr-step-eyebrow">STEP 1 <span>/</span> 3</div>
+            <h1>Choose what it pairs with</h1>
+            <p>Your token trades against this asset, and rewards are distributed to eligible holders.</p>
+            <div className="pr-progress" aria-label="Step 1 of 3">
               <span className="current" /><span /><span />
             </div>
           </div>
 
           <div className="pr-content-grid">
-            <section className="pr-config-card" aria-label="Настройка торговой пары">
+              <section className="pr-config-card" aria-label="Trading pair settings">
               <div className="pr-config-header">
-                <div><span className="pr-kicker">НАСТРОЙКИ ПРЕДЛОЖЕНИЯ</span><h2>Условия торговой пары</h2></div>
-                <span className="pr-required"><i />Обязательные настройки</span>
+                  <div><span className="pr-kicker">PROPOSAL SETTINGS</span><h2>Trading pair terms</h2></div>
+                  <span className="pr-required"><i />Required settings</span>
               </div>
 
               <div className="pr-config-section pr-launch-section">
-                <div className="pr-section-heading"><span className="pr-section-number">01</span><h3>Платформа запуска</h3></div>
-                <div className="pr-platform-card" aria-label="Единственная платформа: Pump.fun">
+                <div className="pr-section-heading"><span className="pr-section-number">01</span><h3>Launch on</h3></div>
+                <div className="pr-platform-card" aria-label="Only platform: Pump.fun">
                   <span className="pr-platform-mark"><Sparkles size={16} /></span>
-                  <span><strong>Pump.fun</strong><small>Единственная платформа в этой концепции</small></span>
-                  <span className="pr-selected-label"><Check size={13} />Выбрано</span>
+                  <span><strong>Pump.fun</strong><small>The only platform in this concept</small></span>
+                  <span className="pr-selected-label"><Check size={13} />Selected</span>
                 </div>
               </div>
 
               <div className="pr-config-section pr-reward-section">
-                <div className="pr-section-heading"><span className="pr-section-number">02</span><div><h3>Механика наград</h3><p>Один механизм распределения для подходящих держателей.</p></div></div>
-                <div className="pr-reward-card" role="group" aria-label="Выбранная механика Reward">
+                <div className="pr-section-heading"><span className="pr-section-number">02</span><div><h3>Hooks</h3><p>One distribution mechanic for eligible holders.</p></div></div>
+                <div className="pr-reward-card" role="group" aria-label="Reward hook selected">
                   <span className="pr-reward-icon"><UsersIcon /></span>
-                  <span className="pr-reward-copy"><strong>Reward</strong><small>Торговые комиссии распределяются между подходящими держателями токена</small></span>
-                  <span className="pr-reward-check"><Check size={14} />Выбрано</span>
+                  <span className="pr-reward-copy"><strong>Reward</strong><small>Trading fees are split among eligible token holders</small></span>
+                  <span className="pr-reward-check"><Check size={14} />Selected</span>
                 </div>
-                <div className="pr-rate-heading"><h4>Комиссия для держателей</h4><span>СТАВКА</span></div>
-                <div className="pr-rate-readout"><label htmlFor="pr-reward-rate">Предлагаемая ставка</label><strong>{(rewardBps / 100).toFixed(2)}<small>%</small></strong></div>
+                <div className="pr-rate-heading"><h4>Holder commission</h4><span>RATE</span></div>
+                <div className="pr-rate-readout"><label htmlFor="pr-reward-rate">Proposed rate</label><strong>{(rewardBps / 100).toFixed(2)}<small>%</small></strong></div>
                 <input
                   id="pr-reward-rate"
                   className="pr-range"
@@ -266,17 +259,17 @@ export function Updated() {
                   step={1}
                   value={rewardBps}
                   onChange={(event) => setRewardBps(Number(event.target.value))}
-                  aria-label="Комиссия для держателей"
-                  aria-valuetext={`${(rewardBps / 100).toFixed(2)} процента`}
+                  aria-label="Holder commission"
+                  aria-valuetext={`${(rewardBps / 100).toFixed(2)} percent`}
                 />
-                <div className="pr-rate-ticks"><span>0,01%</span><span>1,5%</span><span>3%</span></div>
-                <div className="pr-rate-note"><Info size={15} /><p>Ставка зависит от выбранной пары и правил Pump.fun. Это ставка распределения, а не отдельный сбор поверх других комиссий; каталог не подтверждает совместимость пары или доступность ставки.</p></div>
+                <div className="pr-rate-ticks"><span>0.01%</span><span>1.5%</span><span>3%</span></div>
+                <div className="pr-rate-note"><Info size={15} /><p>The available rate depends on the trading pair and Pump.fun rules. This is a distribution rate, not an extra fee on top of other charges; catalog listings do not confirm pair compatibility or rate availability.</p></div>
               </div>
 
               <div className="pr-config-section pr-pairs-section">
-                <div className="pr-section-heading"><span className="pr-section-number">03</span><div><h3>Торговая пара</h3><p>Активы из опубликованного списка Pump.fun. Совместимость каждого mint отдельно не проверена.</p></div></div>
+                <div className="pr-section-heading"><span className="pr-section-number">03</span><div><h3>Paired with</h3><p>Assets from Pump.fun’s published list. Individual mint compatibility has not been verified.</p></div></div>
                 <div className="pr-pair-toolbar">
-                  <div className="pr-pair-tabs" role="group" aria-label="Фильтр каталога">
+                  <div className="pr-pair-tabs" role="group" aria-label="Catalog filter">
                     {tabs.map((tab) => (
                       <button
                         type="button"
@@ -291,16 +284,16 @@ export function Updated() {
                   </div>
                   <label className="pr-search-box">
                     <Search size={15} />
-                    <input value={search} onChange={onSearchChange} placeholder="По тикеру, названию или mint" aria-label="Поиск в каталоге" />
-                    {search && <button type="button" aria-label="Очистить поиск" onClick={() => setSearch('')}><X size={14} /></button>}
+                    <input value={search} onChange={onSearchChange} placeholder="Search by ticker, name or address" aria-label="Search catalog" />
+                    {search && <button type="button" aria-label="Clear search" onClick={() => setSearch('')}><X size={14} /></button>}
                   </label>
                 </div>
                 <div className="pr-catalog-meta">
-                  <span>{visibleAssets.length} из {groupCounts[groupFilter]} активов</span>
-                  <span>Снимок: {supportedPairCatalog.snapshotCapturedAt}</span>
+                  <span>{visibleAssets.length} of {groupCounts[groupFilter]} assets</span>
+                  <span>Snapshot: {supportedPairCatalog.snapshotCapturedAt}</span>
                 </div>
                 {visibleAssets.length > 0 ? (
-                  <div className="pr-asset-grid" aria-label="Результаты каталога">
+                  <div className="pr-asset-grid" aria-label="Catalog results">
                     {visibleAssets.map((asset) => (
                       <button
                         type="button"
@@ -321,34 +314,34 @@ export function Updated() {
                     ))}
                   </div>
                 ) : (
-                  <div className="pr-no-results"><Search size={18} /><strong>Ничего не найдено</strong><span>Измени запрос или выбери другую группу.</span></div>
+                  <div className="pr-no-results"><Search size={18} /><strong>No assets found</strong><span>Try another search or choose a different group.</span></div>
                 )}
                 <div className="pr-source-note">
                   <Info size={14} />
-                  <span>Группы xStocks и Backpack выделены по данным эмитента; Crypto — остальные записи. <a href={supportedPairCatalog.sourceUrl} target="_blank" rel="noreferrer">Официальный источник</a></span>
+                  <span>xStocks and Backpack groups follow issuer data; Crypto contains the remaining entries. <a href={supportedPairCatalog.sourceUrl} target="_blank" rel="noreferrer">Official source</a></span>
                 </div>
 
                 <div className="pr-manual-entry">
                   <button type="button" className="pr-manual-toggle" aria-expanded={manualOpen} onClick={() => setManualOpen((open) => !open)}>
-                    <span><strong>Ввести mint вручную</strong><small>Только кандидат; совместимость не проверяется</small></span>
+                    <span><strong>Enter a mint manually</strong><small>Candidate only; compatibility is unverified</small></span>
                     <ChevronDown size={16} className={manualOpen ? 'open' : ''} />
                   </button>
                   {manualOpen && (
                     <div className="pr-manual-fields">
                       <label>
-                        Адрес mint Solana
-                        <input value={manualMint} onChange={(event) => setManualMint(event.target.value)} placeholder="Введите Base58 mint" spellCheck={false} />
+                        Solana mint address
+                        <input value={manualMint} onChange={(event) => setManualMint(event.target.value)} placeholder="Enter Base58 mint" spellCheck={false} />
                       </label>
                       <label>
-                        Категория актива
+                        Asset category
                         <select value={manualPairType} onChange={(event) => setManualPairType(event.target.value as PairType)}>
-                          <option value="supported-memecoin">Поддерживаемый мемкоин</option>
-                          <option value="tokenized-stock">Токенизированная акция</option>
-                          <option value="other-supported-token">Другой поддерживаемый токен</option>
+                          <option value="supported-memecoin">Supported memecoin</option>
+                          <option value="tokenized-stock">Tokenized stock</option>
+                          <option value="other-supported-token">Other supported token</option>
                         </select>
                       </label>
-                      <button type="button" className="pr-manual-select" disabled={!validMint(manualMint)} onClick={chooseManualMint}>Выбрать непроверенный mint</button>
-                      {manualMint && !validMint(manualMint) && <small className="pr-manual-error">Проверь формат Base58 и длину 32 байта.</small>}
+                      <button type="button" className="pr-manual-select" disabled={!validMint(manualMint)} onClick={chooseManualMint}>Select unverified mint</button>
+                      {manualMint && !validMint(manualMint) && <small className="pr-manual-error">Check the Base58 format and 32-byte length.</small>}
                     </div>
                   )}
                 </div>
@@ -357,52 +350,52 @@ export function Updated() {
               <TokenIdentitySection draft={tokenDraft} onChange={setTokenDraft} showErrors={showIdentityErrors} />
 
               <div className="pr-step-actions">
-                <button type="button" className="pr-back-button" disabled><ArrowLeft size={15} />Назад</button>
-                <button type="button" className="pr-continue-button" onClick={previewProposal}>Продолжить <ArrowRight size={15} /></button>
+                <button type="button" className="pr-back-button" disabled><ArrowLeft size={15} />Back</button>
+                <button type="button" className="pr-continue-button" onClick={previewProposal}>Continue <ArrowRight size={15} /></button>
               </div>
             </section>
 
             <aside className="pr-summary">
               <section className="pr-summary-card">
-                <div className="pr-summary-title"><h2>Предпросмотр токена</h2><span>ДЕМО</span></div>
+                <div className="pr-summary-title"><h2>Token preview</h2><span>DEMO</span></div>
                 <div className="pr-token-summary">
-                  {tokenDraft.imageUrl ? <img className="pr-summary-token-image" src={tokenDraft.imageUrl} alt="Изображение твоего токена" /> : <span className="pr-empty-glyph"><FileImage size={17} /></span>}
-                  <span><strong>{tokenDraft.name.trim() || 'Название токена'}</strong><small>{tokenDraft.ticker.trim() ? `$${tokenDraft.ticker.trim()}` : 'Тикер не указан'}</small></span>
+                  {tokenDraft.imageUrl ? <img className="pr-summary-token-image" src={tokenDraft.imageUrl} alt="Your token image" /> : <span className="pr-empty-glyph"><FileImage size={17} /></span>}
+                  <span><strong>{tokenDraft.name.trim() || 'Token name'}</strong><small>{tokenDraft.ticker.trim() ? `$${tokenDraft.ticker.trim()}` : 'No ticker yet'}</small></span>
                 </div>
                 {tokenDraft.description.trim() && <p className="pr-summary-description">{tokenDraft.description}</p>}
                 <div className="pr-summary-socials">
                   {(['x', 'website', 'telegram'] as const).map((kind) => {
                     const href = tokenLink(tokenDraft[kind], kind);
-                    return href ? <a key={kind} href={href} target="_blank" rel="noopener noreferrer">{kind === 'website' ? 'Сайт' : kind === 'telegram' ? 'Telegram' : 'X'} ↗</a> : null;
+                    return href ? <a key={kind} href={href} target="_blank" rel="noopener noreferrer">{kind === 'website' ? 'Website' : kind === 'telegram' ? 'Telegram' : 'X'} ↗</a> : null;
                   })}
                 </div>
                 <div className="pr-summary-lines">
-                  <div><span>Платформа</span><strong>Pump.fun</strong></div>
-                  <div><span>Тип актива</span><strong>{pairTypeLabel(selectedAsset?.pairType)}</strong></div>
-                  <div><span>Пара</span><strong>{selectedAsset?.ticker ?? '—'}</strong></div>
-                  <div><span>Награда держателям</span><strong>{(rewardBps / 100).toFixed(2)}%</strong></div>
-                  <div><span>Каталог</span><strong>{selectedAsset?.catalogStatus === 'listed' ? 'В списке' : selectedAsset ? 'Не в списке' : '—'}</strong></div>
-                  <div><span>Совместимость</span><strong className="pr-unverified">Не проверена</strong></div>
+                  <div><span>Platform</span><strong>Pump.fun</strong></div>
+                  <div><span>Asset type</span><strong>{pairTypeLabel(selectedAsset?.pairType)}</strong></div>
+                  <div><span>Pair</span><strong>{selectedAsset?.ticker ?? '—'}</strong></div>
+                  <div><span>Holder rewards</span><strong>{(rewardBps / 100).toFixed(2)}%</strong></div>
+                  <div><span>Catalog</span><strong>{selectedAsset?.catalogStatus === 'listed' ? 'Listed' : selectedAsset ? 'Not listed' : '—'}</strong></div>
+                  <div><span>Compatibility</span><strong className="pr-unverified">Unverified</strong></div>
                 </div>
                 {selectedAsset && <code className="pr-summary-mint">{shortMint(selectedAsset.mintAddress)}</code>}
-                <div className="pr-summary-caution"><ShieldCheck size={14} /><span>Запись в каталоге сама по себе не разрешает реальный запуск.</span></div>
-                <button type="button" className="pr-summary-disabled" disabled title="Запуск токена не входит в прототип">Запуск недоступен в демо</button>
+                <div className="pr-summary-caution"><ShieldCheck size={14} /><span>A catalog entry alone does not authorize a real launch.</span></div>
+                <button type="button" className="pr-summary-disabled" disabled title="Token launches are not part of this prototype">Launch unavailable in demo</button>
               </section>
 
               <section className="pr-community-card">
-                <span className="pr-kicker">СТАРТ СООБЩЕСТВА</span>
-                <h2>Общая цель</h2>
+                <span className="pr-kicker">COMMUNITY START</span>
+                <h2>Shared goal</h2>
                 <div className="pr-community-stats">
-                  <span><strong>$10</strong><small>с участника</small></span>
-                  <span><strong>100</strong><small>участников</small></span>
-                  <span><strong>$1,000</strong><small>цель</small></span>
+                  <span><strong>$10</strong><small>per person</small></span>
+                  <span><strong>100</strong><small>contributors</small></span>
+                  <span><strong>$1,000</strong><small>goal</small></span>
                 </div>
-                <p>Окно сбора — 1 час. Если программа будет запущена и цель не достигнута, участники смогут запросить возврат по правилам программы.</p>
-                <div className="pr-not-started"><i />Сбор не начался</div>
-                <small className="pr-demo-only">Это параметры концепции; средства не собираются.</small>
+                <p>One-hour collection window. If the program is launched and the goal is not met, contributors may request a refund under its rules.</p>
+                <div className="pr-not-started"><i />Collection not started</div>
+                <small className="pr-demo-only">Concept terms only; no funds are collected.</small>
               </section>
 
-              <p className="pr-privacy"><ShieldCheck size={14} />Демо-концепция: никаких токенов, сборов или транзакций.</p>
+              <p className="pr-privacy"><ShieldCheck size={14} />Prototype only: no tokens, collections or transactions.</p>
             </aside>
           </div>
         </main>
@@ -411,12 +404,12 @@ export function Updated() {
       {showDemoNotice && (
         <div className="pr-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowDemoNotice(false); }}>
           <section className="pr-demo-modal" role="dialog" aria-modal="true" aria-labelledby="pr-demo-title">
-            <button type="button" className="pr-modal-close" aria-label="Закрыть" onClick={() => setShowDemoNotice(false)}><X size={17} /></button>
+            <button type="button" className="pr-modal-close" aria-label="Close" onClick={() => setShowDemoNotice(false)}><X size={17} /></button>
             <span className="pr-modal-icon"><ShieldCheck size={21} /></span>
-            <span className="pr-kicker">ПРЕДПРОСМОТР</span>
-            <h2 id="pr-demo-title">Только концепция</h2>
-            <p>Этот макет показывает интерфейс выбора пары. Он не создаёт токен, не собирает деньги и не отправляет транзакции. Совместимость выбранного актива не проверена.</p>
-            <button type="button" className="pr-continue-button" onClick={() => setShowDemoNotice(false)}>Понятно <Check size={15} /></button>
+            <span className="pr-kicker">PREVIEW</span>
+            <h2 id="pr-demo-title">Concept only</h2>
+            <p>This mockup previews a token proposal. It does not create a token, collect funds or send transactions. Pair compatibility has not been verified.</p>
+            <button type="button" className="pr-continue-button" onClick={() => setShowDemoNotice(false)}>Got it <Check size={15} /></button>
           </section>
         </div>
       )}

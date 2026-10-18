@@ -17,6 +17,7 @@ import {
   PAIR_TYPE_OPTIONS,
   isPairType,
   isValidSolanaMintAddress,
+  proposalSocialUrl,
   launchProposalSchema,
   type LaunchProposalFormInput,
   type LaunchProposalInput,
@@ -24,6 +25,7 @@ import {
 import { type CatalogMembershipStatus, type PairAssetCategory, type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
 import { type PairCompatibilityStatus } from './lib/pair-compatibility';
 import './proposal.css';
+import { LaunchpadPage } from './components/proposal/LaunchpadPage';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
 const ACTIVITY_KEY = 'fairlaunch.demo.activity.v1';
@@ -230,6 +232,12 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
       <section className="panel">
         <div className="detail-heading"><Artwork launch={launch} /><div><span className={`status ${launch.status === 'completed' ? 'complete' : ''}`}>{launch.status === 'completed' ? 'Goal reached' : 'Active demo'}</span><h1>{launch.name}</h1><span className="ticker">${launch.ticker} · by {launch.creatorWallet}</span></div></div>
         <p className="detail-content">{launch.description}</p>
+        <div className="proposal-result-actions">
+          {([{ key: 'xUrl', kind: 'x', label: 'X' }, { key: 'websiteUrl', kind: 'website', label: 'Website' }, { key: 'telegramUrl', kind: 'telegram', label: 'Telegram' }] as const).map(link => {
+            const href = proposalSocialUrl(launch[link.key] ?? '', link.kind);
+            return href ? <a key={link.key} className="text-link" href={href} target="_blank" rel="noopener noreferrer">{link.label} ↗</a> : null;
+          })}
+        </div>
         <div className="pair-summary" data-testid="launch-pair-settings">
           <div className="pair-summary-item"><span className="stat-label">Trading pair type</span><span className="stat-value">{PAIR_TYPE_LABELS[launch.pairType]}</span></div>
           <div className="pair-summary-item"><span className="stat-label">Pair token</span><span className="stat-value">{launch.pairToken?.source === 'catalog' ? `${launch.pairToken.name} ($${launch.pairToken.ticker})` : launch.pairToken?.source === 'manual' ? 'Manual mint' : 'Mint address'}</span><span className="field-hint mono" title={launch.pairMintAddress}>{shortAddress(launch.pairMintAddress)}</span></div>
@@ -268,7 +276,9 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
   </main>;
 }
 
-function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean }) {
+// Retained during graduation so existing validation, upload and picker behavior
+// remain available for parity checks. The /propose route uses LaunchpadPage.
+export function PreviousProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean }) {
   const [submittedProposal, setSubmittedProposal] = useState<LaunchProposalInput | null>(null);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [tokenSearch, setTokenSearch] = useState('');
@@ -595,6 +605,7 @@ function NotFound() {
 }
 
 function AppContent() {
+  const [location] = useLocation();
   const [launches, setLaunches] = usePersistedState<Launch[]>(LAUNCH_KEY, SEED_LAUNCHES, normalizeLaunches);
   const [activities, setActivities] = usePersistedState<Activity[]>(ACTIVITY_KEY, SEED_ACTIVITIES);
   const [wallet, setWallet] = usePersistedState<string | null>(WALLET_KEY, null);
@@ -621,7 +632,7 @@ function AppContent() {
     const launch: Launch = {
       ...proposal, id, creatorWallet: wallet ? shortAddress(wallet) : 'Demo proposer',
       committedAmountUsd: 0, participantCount: 0, targetParticipantCount: 100,
-      deadline: new Date(Date.now() + 7 * 86400000).toISOString(), status: 'active', participants: [],
+      deadline: new Date(Date.now() + 3600000).toISOString(), status: 'active', participants: [],
     };
     const nextLaunches = [launch, ...launches];
     try {
@@ -659,10 +670,10 @@ function AppContent() {
   };
 
   return <div className="app-shell">
-    <Nav wallet={wallet} onConnect={() => setModal('connect')} />
+    {location !== '/propose' && <Nav wallet={wallet} onConnect={() => setModal('connect')} />}
     <Switch>
       <Route path="/"><HomePage launches={launches} /></Route>
-      <Route path="/propose"><ProposePage onAdd={addLaunch} /></Route>
+      <Route path="/propose"><LaunchpadPage onAdd={addLaunch} wallet={wallet ?? ''} onConnect={() => setModal('connect')} /></Route>
       <Route path="/activity"><ActivityPage activities={activities} launches={launches} wallet={wallet} /></Route>
       <Route path="/launch/:id">{params => <LaunchPage id={params.id} launches={launches} activities={activities} wallet={wallet} onConnect={() => setModal('connect')} onCommit={startCommit} />}</Route>
       <Route><NotFound /></Route>

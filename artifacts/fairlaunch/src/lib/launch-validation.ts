@@ -80,6 +80,18 @@ function isOptionalHttpUrl(value: string): boolean {
   }
 }
 
+export function proposalSocialUrl(value: string, kind: 'website' | 'telegram' | 'x'): string | null {
+  if (!value.trim()) return null;
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`);
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || !host.includes('.')) return null;
+    if (kind === 'telegram' && (!['t.me', 'telegram.me'].includes(host) || url.pathname === '/')) return null;
+    if (kind === 'x' && (!['x.com', 'twitter.com'].includes(host) || url.pathname === '/')) return null;
+    return url.href;
+  } catch { return null; }
+}
+
 export function isValidProposalImageDataUrl(value: string): boolean {
   if (!value) return true;
   const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(value);
@@ -123,6 +135,9 @@ export const launchProposalSchema = z.object({
     .string()
     .trim()
     .refine(isOptionalHttpUrl, 'Use a valid http:// or https:// source URL.'),
+  websiteUrl: z.string().trim().max(200).refine(value => !value || !!proposalSocialUrl(value, 'website'), 'Enter a valid website URL.').optional(),
+  telegramUrl: z.string().trim().max(120).refine(value => !value || !!proposalSocialUrl(value, 'telegram'), 'Enter a valid t.me or telegram.me link.').optional(),
+  xUrl: z.string().trim().max(120).refine(value => !value || !!proposalSocialUrl(value, 'x'), 'Enter an x.com or twitter.com profile or post link.').optional(),
   description: z
     .string()
     .trim()

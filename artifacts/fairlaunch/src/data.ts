@@ -14,6 +14,9 @@ export type Launch = {
   creatorWallet: string;
   imageUrl: string;
   sourceUrl: string;
+  websiteUrl?: string;
+  telegramUrl?: string;
+  xUrl?: string;
   description: string;
   pairType: PairType;
   pairMintAddress: string;
