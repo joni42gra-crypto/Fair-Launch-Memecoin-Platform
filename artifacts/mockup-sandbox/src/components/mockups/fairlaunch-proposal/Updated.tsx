@@ -24,6 +24,7 @@ import {
 } from '../../../../../api-server/src/data/supported-pair-assets';
 import './_group.css';
 import './Updated.css';
+import { emptyTokenDraft, TokenIdentitySection, tokenDraftErrors, tokenLink, type TokenDraft } from './_TokenIdentity';
 
 type PairType = 'supported-memecoin' | 'tokenized-stock' | 'other-supported-token';
 type CatalogAsset = {
@@ -131,6 +132,17 @@ export function Updated() {
   const [manualMint, setManualMint] = useState('');
   const [manualPairType, setManualPairType] = useState<PairType>('other-supported-token');
   const [showDemoNotice, setShowDemoNotice] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState<TokenDraft>(emptyTokenDraft);
+  const [showIdentityErrors, setShowIdentityErrors] = useState(false);
+
+  function previewProposal() {
+    setShowIdentityErrors(true);
+    if (Object.keys(tokenDraftErrors(tokenDraft)).length > 0) {
+      document.querySelector('.pr-identity-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setShowDemoNotice(true);
+  }
 
   const groupCounts = {
     all: catalogAssets.length,
@@ -342,18 +354,27 @@ export function Updated() {
                 </div>
               </div>
 
+              <TokenIdentitySection draft={tokenDraft} onChange={setTokenDraft} showErrors={showIdentityErrors} />
+
               <div className="pr-step-actions">
                 <button type="button" className="pr-back-button" disabled><ArrowLeft size={15} />Назад</button>
-                <button type="button" className="pr-continue-button" onClick={() => setShowDemoNotice(true)}>Продолжить <ArrowRight size={15} /></button>
+                <button type="button" className="pr-continue-button" onClick={previewProposal}>Продолжить <ArrowRight size={15} /></button>
               </div>
             </section>
 
             <aside className="pr-summary">
               <section className="pr-summary-card">
-                <div className="pr-summary-title"><h2>Сводка запуска</h2><span>ДЕМО</span></div>
+                <div className="pr-summary-title"><h2>Предпросмотр токена</h2><span>ДЕМО</span></div>
                 <div className="pr-token-summary">
-                  {selectedAsset ? <CatalogGlyph ticker={selectedAsset.ticker} /> : <span className="pr-empty-glyph"><FileImage size={17} /></span>}
-                  <span><strong>{selectedAsset ? selectedAsset.name : 'Актив не выбран'}</strong><small>{selectedAsset?.ticker ? `$${selectedAsset.ticker}` : 'Выбери пару ниже'}</small></span>
+                  {tokenDraft.imageUrl ? <img className="pr-summary-token-image" src={tokenDraft.imageUrl} alt="Изображение твоего токена" /> : <span className="pr-empty-glyph"><FileImage size={17} /></span>}
+                  <span><strong>{tokenDraft.name.trim() || 'Название токена'}</strong><small>{tokenDraft.ticker.trim() ? `$${tokenDraft.ticker.trim()}` : 'Тикер не указан'}</small></span>
+                </div>
+                {tokenDraft.description.trim() && <p className="pr-summary-description">{tokenDraft.description}</p>}
+                <div className="pr-summary-socials">
+                  {(['x', 'website', 'telegram'] as const).map((kind) => {
+                    const href = tokenLink(tokenDraft[kind], kind);
+                    return href ? <a key={kind} href={href} target="_blank" rel="noopener noreferrer">{kind === 'website' ? 'Сайт' : kind === 'telegram' ? 'Telegram' : 'X'} ↗</a> : null;
+                  })}
                 </div>
                 <div className="pr-summary-lines">
                   <div><span>Платформа</span><strong>Pump.fun</strong></div>
