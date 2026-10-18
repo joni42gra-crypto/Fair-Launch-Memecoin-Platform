@@ -1,29 +1,12 @@
-import type { PairType } from './launch-validation';
-
-export type PairCompatibilityRequest = {
-  pairType: PairType;
-  mintAddress: string;
-  holderRewardBps: number;
-};
+export type PairCompatibilityStatus = 'confirmed' | 'incompatible' | 'not-checked';
 
 export type PairCompatibilityResult =
-  | { status: 'not-checked'; message: string }
-  | { status: 'compatible'; checkedAt: string }
-  | { status: 'incompatible'; checkedAt: string; message: string };
+  | { status: 'not-checked'; reason: string }
+  | { status: 'confirmed'; verifiedAt: string }
+  | { status: 'incompatible'; verifiedAt: string; reason: string };
 
 /**
- * Contract for a future server-side Pump.fun compatibility endpoint.
- * It is deliberately unconfigured until an official server check is available.
+ * A catalog hit proves only that an asset appeared in the published list
+ * snapshot. There is no documented verifier for secondary-pair eligibility,
+ * so all selections remain not checked until a reliable official check exists.
  */
-export interface PairCompatibilityServer {
-  check(request: PairCompatibilityRequest): Promise<PairCompatibilityResult>;
-}
-
-export const unconfiguredPairCompatibilityServer: PairCompatibilityServer = {
-  async check() {
-    return {
-      status: 'not-checked',
-      message: 'Server-side Pump.fun compatibility checks are not configured.',
-    };
-  },
-};

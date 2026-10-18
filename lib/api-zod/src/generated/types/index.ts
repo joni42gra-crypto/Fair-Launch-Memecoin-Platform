@@ -8,6 +8,9 @@
 
 export * from './apiError';
 export * from './healthStatus';
-export * from './searchSolanaTokensParams';
-export * from './tokenCatalogToken';
-export * from './tokenSearchResponse';
+export * from './pairAssetCategory';
+export * from './searchSupportedPairAssetsParams';
+export * from './supportedPairAsset';
+export * from './supportedPairAssetCatalogStatus';
+export * from './supportedPairAssetCompatibilityStatus';
+export * from './supportedPairAssetSearchResponse';

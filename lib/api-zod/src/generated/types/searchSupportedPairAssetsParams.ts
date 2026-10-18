@@ -6,11 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type SearchSolanaTokensParams = {
+export type SearchSupportedPairAssetsParams = {
 /**
- * Token name, ticker, or mint address to search.
- * @minLength 1
+ * Supported pair asset name, ticker, or mint address.
+ * @minLength 0
  * @maxLength 120
  */
-query: string;
+query?: string;
 };

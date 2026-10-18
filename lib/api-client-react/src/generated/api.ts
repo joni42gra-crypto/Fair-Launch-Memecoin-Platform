@@ -18,8 +18,8 @@ import type {
 import type {
   ApiError,
   HealthStatus,
-  SearchSolanaTokensParams,
-  TokenSearchResponse
+  SearchSupportedPairAssetsParams,
+  SupportedPairAssetSearchResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -127,7 +127,7 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
-export const getSearchSolanaTokensUrl = (params: SearchSolanaTokensParams,) => {
+export const getSearchSupportedPairAssetsUrl = (params?: SearchSupportedPairAssetsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -139,16 +139,16 @@ export const getSearchSolanaTokensUrl = (params: SearchSolanaTokensParams,) => {
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/tokens/search?${stringifiedParams}` : `/api/tokens/search`
+  return stringifiedParams.length > 0 ? `/api/tokens/supported-pairs?${stringifiedParams}` : `/api/tokens/supported-pairs`
 }
 
 /**
- * Searches Jupiter Tokens API V2 by token name, ticker, or mint address. The Jupiter API key remains server-side.
- * @summary Search Solana tokens
+ * Searches a server-side snapshot of the official Pump.fun Supported Pair Assets page by name, ticker, or Solana mint address. Membership in the published catalog does not confirm current launch compatibility.
+ * @summary Search Pump.fun Supported Pair Assets
  */
-export const searchSolanaTokens = async (params: SearchSolanaTokensParams, options?: Parameters<typeof customFetch>[1]): Promise<TokenSearchResponse> => {
+export const searchSupportedPairAssets = async (params?: SearchSupportedPairAssetsParams, options?: Parameters<typeof customFetch>[1]): Promise<SupportedPairAssetSearchResponse> => {
 
-  return customFetch<TokenSearchResponse>(getSearchSolanaTokensUrl(params),
+  return customFetch<SupportedPairAssetSearchResponse>(getSearchSupportedPairAssetsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -161,45 +161,45 @@ export const searchSolanaTokens = async (params: SearchSolanaTokensParams, optio
 
 
 
-export const getSearchSolanaTokensQueryKey = (params?: SearchSolanaTokensParams,) => {
+export const getSearchSupportedPairAssetsQueryKey = (params?: SearchSupportedPairAssetsParams,) => {
     return [
-    `/api/tokens/search`, ...(params ? [params] : [])
+    `/api/tokens/supported-pairs`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getSearchSolanaTokensQueryOptions = <TData = Awaited<ReturnType<typeof searchSolanaTokens>>, TError = ErrorType<ApiError>>(params: SearchSolanaTokensParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchSolanaTokens>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getSearchSupportedPairAssetsQueryOptions = <TData = Awaited<ReturnType<typeof searchSupportedPairAssets>>, TError = ErrorType<ApiError>>(params?: SearchSupportedPairAssetsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchSupportedPairAssets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getSearchSolanaTokensQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getSearchSupportedPairAssetsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSolanaTokens>>> = ({ signal }) => searchSolanaTokens(params, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSupportedPairAssets>>> = ({ signal }) => searchSupportedPairAssets(params, { signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchSolanaTokens>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchSupportedPairAssets>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type SearchSolanaTokensQueryResult = NonNullable<Awaited<ReturnType<typeof searchSolanaTokens>>>
-export type SearchSolanaTokensQueryError = ErrorType<ApiError>
+export type SearchSupportedPairAssetsQueryResult = NonNullable<Awaited<ReturnType<typeof searchSupportedPairAssets>>>
+export type SearchSupportedPairAssetsQueryError = ErrorType<ApiError>
 
 
 /**
- * @summary Search Solana tokens
+ * @summary Search Pump.fun Supported Pair Assets
  */
 
-export function useSearchSolanaTokens<TData = Awaited<ReturnType<typeof searchSolanaTokens>>, TError = ErrorType<ApiError>>(
- params: SearchSolanaTokensParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchSolanaTokens>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useSearchSupportedPairAssets<TData = Awaited<ReturnType<typeof searchSupportedPairAssets>>, TError = ErrorType<ApiError>>(
+ params?: SearchSupportedPairAssetsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchSupportedPairAssets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getSearchSolanaTokensQueryOptions(params,options)
+  const queryOptions = getSearchSupportedPairAssetsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

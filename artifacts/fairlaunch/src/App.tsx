@@ -4,7 +4,7 @@ import { AlertCircle, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock3, Ex
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Form, FormField } from '@/components/ui/form';
-import { getSearchSolanaTokensQueryKey, useSearchSolanaTokens } from '@workspace/api-client-react';
+import { getSearchSupportedPairAssetsQueryKey, useSearchSupportedPairAssets } from '@workspace/api-client-react';
 import { Activity, Launch, SEED_ACTIVITIES, SEED_LAUNCHES, shortAddress } from './data';
 import {
   DEFAULT_HOLDER_REWARD_BPS,
@@ -21,8 +21,8 @@ import {
   type LaunchProposalFormInput,
   type LaunchProposalInput,
 } from './lib/launch-validation';
-import { type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
-import { unconfiguredPairCompatibilityServer, type PairCompatibilityResult } from './lib/pair-compatibility';
+import { type CatalogMembershipStatus, type PairAssetCategory, type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
+import { type PairCompatibilityStatus } from './lib/pair-compatibility';
 import './proposal.css';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
@@ -44,6 +44,32 @@ function CatalogTokenIcon({ token }: { token: TokenCatalogEntry }) {
     return <span className="catalog-token-icon catalog-icon-placeholder" aria-hidden="true"><ImageIcon size={15} /></span>;
   }
   return <span className="catalog-token-icon"><img src={token.iconUrl} alt="" onError={() => setImageFailed(true)} /></span>;
+}
+
+const PAIR_ASSET_CATEGORY_LABELS: Record<PairAssetCategory, string> = {
+  native: 'Native asset',
+  stablecoin: 'Stablecoin',
+  'tokenized-stock': 'Tokenized stock / ETF',
+  'tokenized-asset': 'Tokenized asset',
+  wrapped: 'Wrapped / bridged',
+  protocol: 'Protocol token',
+  platform: 'Platform token',
+  community: 'Community token',
+  memecoin: 'Memecoin',
+  'pumpfun-coin': 'Pump.fun coin',
+  other: 'Other',
+};
+
+function catalogMembershipLabel(status?: CatalogMembershipStatus) {
+  if (status === 'listed') return 'Found in official list';
+  if (status === 'not-listed') return 'Not in main list';
+  return 'Catalog status unknown';
+}
+
+function compatibilityLabel(status?: PairCompatibilityStatus) {
+  if (status === 'confirmed') return 'Compatibility confirmed';
+  if (status === 'incompatible') return 'Not compatible';
+  return 'Not checked';
 }
 
 function usePersistedState<T>(key: string, initial: T, normalize?: (value: T) => T) {
@@ -196,6 +222,8 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
   const alreadyCommitted = !!wallet && activities.some(item => item.launchId === launch.id && item.walletAddress === wallet);
   const progress = Math.min(100, Math.round(launch.participantCount / launch.targetParticipantCount * 100));
   const remaining = Math.max(0, launch.targetParticipantCount - launch.participantCount);
+  const pairCatalogStatus = launch.pairToken?.catalogStatus ?? 'unknown';
+  const pairCompatibilityStatus = launch.pairToken?.compatibilityStatus ?? 'not-checked';
   return <main className="main">
     <div className="page-top"><Link href="/" className="text-link" data-testid="link-back-launches">← All launches</Link></div>
     <div className="detail-layout">
@@ -207,7 +235,7 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
           <div className="pair-summary-item"><span className="stat-label">Pair token</span><span className="stat-value">{launch.pairToken?.source === 'catalog' ? `${launch.pairToken.name} ($${launch.pairToken.ticker})` : launch.pairToken?.source === 'manual' ? 'Manual mint' : 'Mint address'}</span><span className="field-hint mono" title={launch.pairMintAddress}>{shortAddress(launch.pairMintAddress)}</span></div>
           <div className="pair-summary-item"><span className="stat-label">Holder Rewards · demo setting</span><span className="stat-value">{(launch.holderRewardBps / 100).toFixed(2)}%</span></div>
         </div>
-        <div className="pair-validation-note" data-testid="status-launch-pair-check">Not checked. Pair support and reward-rate eligibility have not been checked with Pump.fun.</div>
+        <div className="pair-validation-note" data-testid="status-launch-pair-check"><strong>Catalog: {catalogMembershipLabel(pairCatalogStatus)}.</strong> Compatibility: {compatibilityLabel(pairCompatibilityStatus)}. Pair and reward-rate eligibility have not been verified by Pump.fun.</div>
         <div className="detail-stats">
           <div className="detail-stat"><span className="stat-label">Participants</span><span className="stat-value">{launch.participantCount} / {launch.targetParticipantCount}</span></div>
           <div className="detail-stat"><span className="stat-label">Demo amount shown</span><span className="stat-value">${launch.committedAmountUsd.toLocaleString()}</span></div>
@@ -254,7 +282,6 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
   const [imageSize, setImageSize] = useState(0);
   const [imageReading, setImageReading] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [compatibility, setCompatibility] = useState<PairCompatibilityResult>({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
   const imageInput = useRef<HTMLInputElement>(null);
   const catalogSearchInput = useRef<HTMLInputElement>(null);
   const tokenTrigger = useRef<HTMLButtonElement>(null);
@@ -266,27 +293,28 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
   });
   const holderRewardBps = form.watch('holderRewardBps') ?? DEFAULT_HOLDER_REWARD_BPS;
   const descriptionLength = form.watch('description')?.length ?? 0;
-  const pairTypeValue = form.watch('pairType');
   const mintValue = form.watch('pairMintAddress') ?? '';
   const imageData = form.watch('imageUrl') ?? '';
   const validManualMint = isValidSolanaMintAddress(manualMint);
   const searchText = tokenSearch.trim();
-  const searchReady = tokenDialogOpen && Boolean(debouncedTokenSearch) && debouncedTokenSearch === searchText;
-  const catalogQuery = useSearchSolanaTokens(
+  const searchReady = tokenDialogOpen && debouncedTokenSearch === searchText;
+  const catalogQuery = useSearchSupportedPairAssets(
     { query: debouncedTokenSearch },
     {
       query: {
         enabled: searchReady,
-        queryKey: getSearchSolanaTokensQueryKey({ query: debouncedTokenSearch }),
+        queryKey: getSearchSupportedPairAssetsQueryKey({ query: debouncedTokenSearch }),
         staleTime: 30_000,
         retry: 1,
       },
     },
   );
   const catalogTokens = catalogQuery.data?.results ?? [];
-  const catalogLoading = tokenDialogOpen && Boolean(searchText) && (!searchReady || catalogQuery.isFetching);
+  const catalogLoading = tokenDialogOpen && (searchText ? (!searchReady || catalogQuery.isFetching) : (!catalogQuery.data && catalogQuery.isFetching));
   const catalogError = catalogQuery.error?.data?.error
-    ?? (catalogQuery.isError ? 'Could not connect to Jupiter. Check your connection and try again.' : '');
+    ?? (catalogQuery.isError ? 'Could not load the official supported-pair catalog. Check the server connection and try again.' : '');
+  const selectedCatalogStatus = selectedToken?.catalogStatus ?? 'unknown';
+  const selectedCompatibilityStatus = selectedToken?.compatibilityStatus ?? 'not-checked';
 
   useEffect(() => {
     if (!tokenDialogOpen || !searchText) {
@@ -326,21 +354,6 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
       document.body.style.overflow = previousOverflow;
     };
   }, [tokenDialogOpen]);
-
-  useEffect(() => {
-    if (!selectedToken || !isPairType(pairTypeValue)) {
-      setCompatibility({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
-      return;
-    }
-    let alive = true;
-    setCompatibility({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
-    unconfiguredPairCompatibilityServer.check({ pairType: pairTypeValue, mintAddress: selectedToken.mintAddress, holderRewardBps }).then(result => {
-      if (alive) setCompatibility(result);
-    }).catch(() => {
-      if (alive) setCompatibility({ status: 'not-checked', message: 'The server check could not be completed.' });
-    });
-    return () => { alive = false; };
-  }, [selectedToken, pairTypeValue, holderRewardBps]);
 
   function chooseToken(token: SelectedPairToken) {
     setSelectedToken(token);
@@ -422,7 +435,6 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
     setImageSize(0);
     setImageError('');
     setSaveError('');
-    setCompatibility({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
     form.reset();
     if (imageInput.current) imageInput.current.value = '';
   }
@@ -478,16 +490,16 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
           <div className="token-picker-block">
             <div className="field-label-row"><label>Pair token <span className="required-mark">*</span></label><span className="field-hint inline-hint">Catalog lookup</span></div>
             <button ref={tokenTrigger} type="button" className={`token-picker-button ${selectedToken ? 'has-token' : ''}`} onClick={() => { setTokenSearch(''); setManualMint(selectedToken?.source === 'manual' ? selectedToken.mintAddress : ''); setTokenDialogOpen(true); }} aria-haspopup="dialog" data-testid="button-select-pair-token"><span className="token-picker-icon"><Search size={16} /></span><span className="token-picker-text"><strong>{selectedToken?.source === 'catalog' ? `${selectedToken.name} ($${selectedToken.ticker})` : selectedToken ? 'Manual mint selected' : 'Select a token'}</strong><small>{selectedToken ? selectedToken.mintAddress : 'Search by name, ticker, or mint address'}</small></span><span className="picker-arrow"><ArrowUpRight size={15} /></span></button>
-            <FormField control={form.control} name="pairMintAddress" render={({ field, fieldState }) => <><input type="hidden" {...field} data-testid="input-pair-mint-address" />{selectedToken && <div className="selected-token-status"><span className="mono">{selectedToken.mintAddress}</span><span className="mint-status">{compatibility.status === 'not-checked' ? 'Not checked' : compatibility.status}</span></div>}{fieldState.error && <p className="error-line" role="alert" data-testid="error-pair-mint">{fieldState.error.message}</p>}</>} />
+            <FormField control={form.control} name="pairMintAddress" render={({ field, fieldState }) => <><input type="hidden" {...field} data-testid="input-pair-mint-address" />{selectedToken && <div className="selected-token-status"><span className="mono">{selectedToken.mintAddress}</span><span className="pair-status-pills"><span className="pair-status-pill">{catalogMembershipLabel(selectedCatalogStatus)}</span><span className="pair-status-pill">{compatibilityLabel(selectedCompatibilityStatus)}</span></span></div>}{fieldState.error && <p className="error-line" role="alert" data-testid="error-pair-mint">{fieldState.error.message}</p>}</>} />
           </div>
-          <div className="pair-validation-note compact-validation" data-testid="notice-pair-validation">Mint format checks only validate Base58 encoding and 32-byte length. Token existence, pair support, and Pump.fun eligibility are not checked.</div>
+          <div className="pair-validation-note compact-validation" data-testid="notice-pair-validation">Catalog membership and compatibility are separate. A listing is not live eligibility confirmation; secondary pair eligibility is not checked.</div>
         </section>
         <section className="form-section rewards-section">
           <div className="section-label"><span className="section-index">03</span><h3>Holder Rewards</h3></div>
           <FormField control={form.control} name="holderRewardBps" render={({ field, fieldState }) => <><div className="reward-slider-header"><label htmlFor="holder-reward-rate">Proposed reward rate</label><strong data-testid="text-holder-reward-rate">{(holderRewardBps / 100).toFixed(2)}<span>%</span></strong></div><input {...field} id="holder-reward-rate" type="range" min={MIN_HOLDER_REWARD_BPS} max={MAX_HOLDER_REWARD_BPS} step={1} value={holderRewardBps} onChange={event => field.onChange(Number(event.target.value))} data-testid="slider-holder-rewards" aria-label="Holder Rewards rate" aria-valuetext={`${(holderRewardBps / 100).toFixed(2)} percent`} aria-invalid={fieldState.invalid} /><div className="range-limits"><span>0.01%</span><span>3.00%</span></div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</>} />
           <div className="rewards-explanation"><Info size={15} /><p>Rewards are intended for eligible holders of the selected pair token, distributed under Pump.fun holder rules. Eligibility and distribution are not calculated or verified here.</p></div>
         </section>
-        <div className="pair-validation-note"><ShieldCheck size={16} /><span><strong>Demo proposal only</strong><small>Compatibility status: {compatibility.status === 'not-checked' ? 'Not checked.' : compatibility.status}. No official SDK or server check is configured. No token, pool, or on-chain asset will be created.</small></span></div>
+        <div className="pair-validation-note"><ShieldCheck size={16} /><span><strong>Demo proposal only</strong><small>Catalog status: {catalogMembershipLabel(selectedCatalogStatus)}. Compatibility: {compatibilityLabel(selectedCompatibilityStatus)}. No token, pool, or on-chain asset will be created.</small></span></div>
         {saveError && <p className="form-error" role="alert" data-testid="error-proposal-save"><AlertCircle size={15} />{saveError}</p>}
         <button type="submit" className="button button-primary button-wide save-button" disabled={imageReading || form.formState.isSubmitting} data-testid="button-submit-proposal">Save demo proposal <ArrowUpRight size={15} /></button>
         <p className="submit-caption">Proposal data is stored in this browser only. No wallet, transaction, or remote storage.</p>
@@ -506,20 +518,21 @@ function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean 
         <div className="fu-modal-top"><div><span className="modal-kicker">PAIR TOKEN / CATALOG</span><h2 id="token-dialog-title">Select a token</h2></div><button type="button" className="modal-close" onClick={() => { setTokenDialogOpen(false); tokenTrigger.current?.focus(); }} aria-label="Close token selector" data-testid="button-close-token-dialog"><X size={18} /></button></div>
         <p className="modal-copy">Find a pair token by its name, ticker, or Solana mint address.</p>
         <label className="token-search"><Search size={16} /><input ref={catalogSearchInput} value={tokenSearch} onChange={event => setTokenSearch(event.target.value)} placeholder="Search name, ticker, or mint" aria-label="Search token catalog" data-testid="input-token-search" /></label>
-        <p className="catalog-warning" data-testid="notice-jupiter-search"><Info size={13} />Jupiter search results are not confirmation of Pump.fun pair or reward compatibility.</p>
-        {catalogLoading ? <div className="catalog-empty" role="status" data-testid="status-catalog-loading"><span className="catalog-spinner" aria-hidden="true" /><strong>Searching Jupiter tokens…</strong></div> :
-          searchReady && catalogQuery.isError ? <div className="catalog-empty catalog-error" role="alert" data-testid="error-token-catalog"><span className="catalog-empty-icon"><AlertCircle size={18} /></span><strong>Couldn’t connect to Jupiter</strong><p>{catalogError}</p><button type="button" className="button button-quiet" onClick={() => void catalogQuery.refetch()} data-testid="button-retry-token-search">Try again</button></div> :
-          searchReady && catalogQuery.isSuccess && catalogTokens.length > 0 ? <div className="catalog-results" aria-label="Token catalog results">{catalogTokens.map(token => {
-            const tokenEntry: TokenCatalogEntry = { mintAddress: token.mintAddress, name: token.name, ticker: token.ticker, ...(token.iconUrl ? { iconUrl: token.iconUrl } : {}) };
-            return <button type="button" className="catalog-result" key={token.mintAddress} onClick={() => chooseToken({ ...tokenEntry, source: 'catalog' })} data-testid={`button-catalog-token-${token.mintAddress}`}><CatalogTokenIcon token={tokenEntry} /><span><strong>{token.name} <small>${token.ticker}</small></strong><span className="mono" title={token.mintAddress}>{shortAddress(token.mintAddress)}</span></span></button>;
+        <p className="catalog-warning" data-testid="notice-pump-supported-list"><Info size={13} />Search uses the official list snapshot. Category labels are local groupings; catalog membership does not confirm current Pump.fun eligibility.</p>
+        {catalogLoading ? <div className="catalog-empty" role="status" data-testid="status-catalog-loading"><span className="catalog-spinner" aria-hidden="true" /><strong>Searching supported assets…</strong></div> :
+          searchReady && catalogQuery.isError ? <div className="catalog-empty catalog-error" role="alert" data-testid="error-token-catalog"><span className="catalog-empty-icon"><AlertCircle size={18} /></span><strong>Couldn’t load the supported-pair list</strong><p>{catalogError}</p><button type="button" className="button button-quiet" onClick={() => void catalogQuery.refetch()} data-testid="button-retry-token-search">Try again</button></div> :
+          searchText && searchReady && catalogQuery.isSuccess && catalogTokens.length > 0 ? <div className="catalog-results" aria-label="Token catalog results">{catalogTokens.map(token => {
+            const tokenEntry: TokenCatalogEntry = { mintAddress: token.mintAddress, name: token.name, ticker: token.ticker, category: token.category, iconUrl: token.iconUrl, catalogStatus: token.catalogStatus, compatibilityStatus: token.compatibilityStatus };
+            return <button type="button" className="catalog-result" key={token.mintAddress} onClick={() => chooseToken({ ...tokenEntry, source: 'catalog' })} data-testid={`button-catalog-token-${token.mintAddress}`}><CatalogTokenIcon token={tokenEntry} /><span className="catalog-result-copy"><strong>{token.name} <small>${token.ticker}</small></strong><span className="mono" title={token.mintAddress}>{shortAddress(token.mintAddress)}</span><span className="catalog-result-details"><small>{PAIR_ASSET_CATEGORY_LABELS[token.category]}</small><small>In official list</small><small>Compatibility: not checked</small></span></span></button>;
           })}</div> :
-          searchReady && catalogQuery.isSuccess ? <div className="catalog-empty" role="status" data-testid="status-catalog-empty"><span className="catalog-empty-icon"><Search size={20} /></span><strong>Nothing found</strong><p>No Jupiter token matches this name, ticker, or mint address.</p></div> :
-          <div className="catalog-empty" role="status" data-testid="status-catalog-prompt"><span className="catalog-empty-icon"><Search size={20} /></span><strong>Search Solana tokens</strong><p>Enter a token name, ticker, or mint address to search Jupiter.</p></div>}
+          searchText && searchReady && catalogQuery.isSuccess ? <div className="catalog-empty" role="status" data-testid="status-catalog-empty"><span className="catalog-empty-icon"><Search size={20} /></span><strong>Nothing found</strong><p>No asset in the official list matches this name, ticker, or mint address.</p></div> :
+          <div className="catalog-empty" role="status" data-testid="status-catalog-prompt"><span className="catalog-empty-icon"><Search size={20} /></span><strong>Search supported pair assets</strong><p>Enter a name, ticker, or Solana mint to search the Pump.fun list.</p>{catalogQuery.data && <small className="catalog-source-date">Snapshot of {catalogQuery.data.totalAssets} assets · page updated {catalogQuery.data.sourceLastUpdated}</small>}</div>}
+        <div className="secondary-pair-note"><strong>Secondary Pump.fun coins</strong><p>A Pump.fun coin may qualify as a pair only when its own launch was against a listed asset (one hop). This app cannot verify that launch basis, so such mints remain “Not checked.”</p></div>
         <div className="advanced-mint dialog-advanced">
           <button className="advanced-toggle" type="button" aria-expanded={showAdvancedMint} onClick={() => setShowAdvancedMint(value => !value)} data-testid="button-toggle-manual-mint"><span><span className="advanced-bracket">+</span><span><strong>Advanced</strong><small>Enter a mint address manually</small></span></span><ChevronDown size={16} className={showAdvancedMint ? 'chevron-open' : ''} /></button>
-          {showAdvancedMint && <div className="advanced-content"><div className="field"><div className="field-label-row"><label htmlFor="manual-pair-mint">Pair token mint address</label>{manualMintTouched && manualMint && <span className={`mint-status ${validManualMint ? 'valid' : 'invalid'}`}>{validManualMint ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}{validManualMint ? 'Format valid · unverified' : 'Invalid format'}</span>}</div><input id="manual-pair-mint" value={manualMint} onChange={event => { setManualMint(event.target.value); setManualMintTouched(true); }} onBlur={() => setManualMintTouched(true)} inputMode="text" autoComplete="off" spellCheck={false} minLength={32} maxLength={44} placeholder="Solana Base58 mint address" aria-invalid={manualMintTouched && !!manualMint && !validManualMint} data-testid="input-manual-mint" /><div className="field-hint">Checks Base58 encoding and 32-byte length only. No network lookup is performed.</div>{manualMintTouched && manualMint && !validManualMint && <p className="error-line" role="alert">Enter a valid 32-byte Solana Base58 mint address.</p>}</div><div className="unverified-note"><ShieldCheck size={15} /><span><strong>Format check only</strong><small>This address is not checked for existence, pair support, or reward eligibility.</small></span></div><button type="button" className="button button-primary manual-select-button" disabled={!validManualMint} onClick={() => chooseToken({ source: 'manual', mintAddress: manualMint.trim() })} data-testid="button-use-manual-mint">Use this mint</button></div>}
+          {showAdvancedMint && <div className="advanced-content"><div className="field"><div className="field-label-row"><label htmlFor="manual-pair-mint">Pair token mint address</label>{manualMintTouched && manualMint && <span className={`mint-status ${validManualMint ? 'valid' : 'invalid'}`}>{validManualMint ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}{validManualMint ? 'Format valid · unverified' : 'Invalid format'}</span>}</div><input id="manual-pair-mint" value={manualMint} onChange={event => { setManualMint(event.target.value); setManualMintTouched(true); }} onBlur={() => setManualMintTouched(true)} inputMode="text" autoComplete="off" spellCheck={false} minLength={32} maxLength={44} placeholder="Solana Base58 mint address" aria-invalid={manualMintTouched && !!manualMint && !validManualMint} data-testid="input-manual-mint" /><div className="field-hint">Checks Base58 encoding and 32-byte length only. No network lookup is performed.</div>{manualMintTouched && manualMint && !validManualMint && <p className="error-line" role="alert">Enter a valid 32-byte Solana Base58 mint address.</p>}</div><div className="unverified-note"><ShieldCheck size={15} /><span><strong>Not in the main list · not checked</strong><small>Manual entry is an unverified demo candidate. A pump.fun coin could qualify as a one-hop secondary pair, but this app has no official way to confirm its original pair.</small></span></div><button type="button" className="button button-primary manual-select-button" disabled={!validManualMint} onClick={() => chooseToken({ source: 'manual', mintAddress: manualMint.trim(), catalogStatus: 'not-listed', compatibilityStatus: 'not-checked' })} data-testid="button-use-manual-mint">Use as unverified candidate</button></div>}
         </div>
-        <div className="fu-modal-footer"><span><Info size={13} />Search metadata does not verify Pump.fun compatibility.</span><button type="button" className="button button-quiet" onClick={() => setShowAdvancedMint(true)} data-testid="button-enter-mint-manually">Enter mint manually</button></div>
+        <div className="fu-modal-footer"><span><Info size={13} />No catalog entry confirms live compatibility.</span><a className="button button-quiet source-link" href="https://pump.fun/docs/custom-pairs" target="_blank" rel="noreferrer" data-testid="link-supported-pair-source">Official source <ExternalLink size={13} /></a></div>
       </section>
     </div>}
   </main>;

@@ -9,31 +9,70 @@ export interface HealthStatus {
   status: string;
 }
 
-export interface TokenCatalogToken {
+export type PairAssetCategory = typeof PairAssetCategory[keyof typeof PairAssetCategory];
+
+
+export const PairAssetCategory = {
+  native: 'native',
+  stablecoin: 'stablecoin',
+  'tokenized-stock': 'tokenized-stock',
+  'tokenized-asset': 'tokenized-asset',
+  wrapped: 'wrapped',
+  protocol: 'protocol',
+  platform: 'platform',
+  community: 'community',
+  memecoin: 'memecoin',
+  'pumpfun-coin': 'pumpfun-coin',
+  other: 'other',
+} as const;
+
+export type SupportedPairAssetCatalogStatus = typeof SupportedPairAssetCatalogStatus[keyof typeof SupportedPairAssetCatalogStatus];
+
+
+export const SupportedPairAssetCatalogStatus = {
+  listed: 'listed',
+} as const;
+
+export type SupportedPairAssetCompatibilityStatus = typeof SupportedPairAssetCompatibilityStatus[keyof typeof SupportedPairAssetCompatibilityStatus];
+
+
+export const SupportedPairAssetCompatibilityStatus = {
+  'not-checked': 'not-checked',
+} as const;
+
+export interface SupportedPairAsset {
   /** @minLength 1 */
   mintAddress: string;
   /** @minLength 1 */
   name: string;
   /** @minLength 1 */
   ticker: string;
+  category: PairAssetCategory;
   /** @nullable */
-  iconUrl?: string | null;
+  iconUrl: string | null;
+  catalogStatus: SupportedPairAssetCatalogStatus;
+  compatibilityStatus: SupportedPairAssetCompatibilityStatus;
 }
 
-export interface TokenSearchResponse {
-  results: TokenCatalogToken[];
+export interface SupportedPairAssetSearchResponse {
+  sourceUrl: string;
+  sourceLastUpdated: string;
+  snapshotCapturedAt: string;
+  /** @minimum 0 */
+  totalAssets: number;
+  results: SupportedPairAsset[];
 }
 
 export interface ApiError {
   error: string;
 }
 
-export type SearchSolanaTokensParams = {
+export type SearchSupportedPairAssetsParams = {
 /**
- * Token name, ticker, or mint address to search.
- * @minLength 1
+ * Supported pair asset name, ticker, or mint address.
+ * @minLength 0
  * @maxLength 120
  */
-query: string;
+query?: string;
 };
 

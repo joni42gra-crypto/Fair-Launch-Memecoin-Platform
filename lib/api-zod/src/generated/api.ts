@@ -18,28 +18,38 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * Searches Jupiter Tokens API V2 by token name, ticker, or mint address. The Jupiter API key remains server-side.
- * @summary Search Solana tokens
+ * Searches a server-side snapshot of the official Pump.fun Supported Pair Assets page by name, ticker, or Solana mint address. Membership in the published catalog does not confirm current launch compatibility.
+ * @summary Search Pump.fun Supported Pair Assets
  */
-export const searchSolanaTokensQueryQueryMax = 120;
+export const searchSupportedPairAssetsQueryQueryMin = 0;
+export const searchSupportedPairAssetsQueryQueryMax = 120;
 
 
 
-export const SearchSolanaTokensQueryParams = zod.object({
-  "query": zod.coerce.string().min(1).max(searchSolanaTokensQueryQueryMax).describe('Token name, ticker, or mint address to search.')
+export const SearchSupportedPairAssetsQueryParams = zod.object({
+  "query": zod.coerce.string().min(searchSupportedPairAssetsQueryQueryMin).max(searchSupportedPairAssetsQueryQueryMax).optional().describe('Supported pair asset name, ticker, or mint address.')
 })
 
+export const searchSupportedPairAssetsResponseTotalAssetsMin = 0;
 
 
 
 
 
-export const SearchSolanaTokensResponse = zod.object({
+
+export const SearchSupportedPairAssetsResponse = zod.object({
+  "sourceUrl": zod.string().url(),
+  "sourceLastUpdated": zod.string(),
+  "snapshotCapturedAt": zod.coerce.date(),
+  "totalAssets": zod.number().int().min(searchSupportedPairAssetsResponseTotalAssetsMin),
   "results": zod.array(zod.object({
   "mintAddress": zod.string().min(1),
   "name": zod.string().min(1),
   "ticker": zod.string().min(1),
-  "iconUrl": zod.string().url().nullish()
+  "category": zod.enum(['native', 'stablecoin', 'tokenized-stock', 'tokenized-asset', 'wrapped', 'protocol', 'platform', 'community', 'memecoin', 'pumpfun-coin', 'other']),
+  "iconUrl": zod.string().url().nullable(),
+  "catalogStatus": zod.enum(['listed']),
+  "compatibilityStatus": zod.enum(['not-checked'])
 }))
 })
 

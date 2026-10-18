@@ -11,7 +11,7 @@ tags:
   - name: health
     description: Health operations
   - name: tokens
-    description: Solana token catalog search
+    description: Pump.fun Supported Pair Assets catalog
 paths:
   /healthz:
     get:
@@ -26,48 +26,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-  /tokens/search:
+  /tokens/supported-pairs:
     get:
-      operationId: searchSolanaTokens
+      operationId: searchSupportedPairAssets
       tags: [tokens]
-      summary: Search Solana tokens
-      description: Searches Jupiter Tokens API V2 by token name, ticker, or mint address. The Jupiter API key remains server-side.
+      summary: Search Pump.fun Supported Pair Assets
+      description: Searches a server-side snapshot of the official Pump.fun Supported Pair Assets page by name, ticker, or Solana mint address. Membership in the published catalog does not confirm current launch compatibility.
       parameters:
         - name: query
           in: query
-          required: true
-          description: Token name, ticker, or mint address to search.
+          required: false
+          description: Supported pair asset name, ticker, or mint address.
           schema:
             type: string
-            minLength: 1
+            minLength: 0
             maxLength: 120
       responses:
         "200":
-          description: Matching token metadata returned by Jupiter.
+          description: Matching records from the official-page catalog snapshot.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TokenSearchResponse"
+                $ref: "#/components/schemas/SupportedPairAssetSearchResponse"
         "400":
           description: Invalid search query.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-        "502":
-          description: Jupiter search is unavailable or rejected the server key.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Jupiter API key is not configured or upstream rate limit reached.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "504":
-          description: Jupiter search timed out.
+        "500":
+          description: The local supported-pair catalog is unavailable or invalid.
           content:
             application/json:
               schema:
@@ -81,7 +69,21 @@ components:
           type: string
       required:
         - status
-    TokenCatalogToken:
+    PairAssetCategory:
+      type: string
+      enum:
+        - native
+        - stablecoin
+        - tokenized-stock
+        - tokenized-asset
+        - wrapped
+        - protocol
+        - platform
+        - community
+        - memecoin
+        - pumpfun-coin
+        - other
+    SupportedPairAsset:
       type: object
       properties:
         mintAddress:
@@ -93,21 +95,48 @@ components:
         ticker:
           type: string
           minLength: 1
+        category:
+          $ref: "#/components/schemas/PairAssetCategory"
         iconUrl:
           type: ["string", "null"]
           format: uri
+        catalogStatus:
+          type: string
+          enum: [listed]
+        compatibilityStatus:
+          type: string
+          enum: [not-checked]
       required:
         - mintAddress
         - name
         - ticker
-    TokenSearchResponse:
+        - category
+        - iconUrl
+        - catalogStatus
+        - compatibilityStatus
+    SupportedPairAssetSearchResponse:
       type: object
       properties:
+        sourceUrl:
+          type: string
+          format: uri
+        sourceLastUpdated:
+          type: string
+        snapshotCapturedAt:
+          type: string
+          format: date
+        totalAssets:
+          type: integer
+          minimum: 0
         results:
           type: array
           items:
-            $ref: "#/components/schemas/TokenCatalogToken"
+            $ref: "#/components/schemas/SupportedPairAsset"
       required:
+        - sourceUrl
+        - sourceLastUpdated
+        - snapshotCapturedAt
+        - totalAssets
         - results
     ApiError:
       type: object

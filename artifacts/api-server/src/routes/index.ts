@@ -1,10 +1,10 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
-import tokensRouter from "./tokens";
+import supportedPairsRouter from "./supported-pairs";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
-router.use(tokensRouter);
+router.use(supportedPairsRouter);
 
 export default router;
