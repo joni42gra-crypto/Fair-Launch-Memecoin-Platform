@@ -1,0 +1,1 @@
+- [Launchpad scope](launchpad-scope.md) — preserve the existing app and working features; UI-only changes must not imply real token launches or transactions.

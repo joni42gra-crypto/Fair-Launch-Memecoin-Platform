@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { ArrowUpRight, Check, Clock3, ExternalLink, Plus, ShieldCheck, Users, Wallet, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock3, ExternalLink, FileImage, Info, Plus, Search, ShieldCheck, Upload, Users, Wallet, X } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Form, FormField } from '@/components/ui/form';
@@ -9,6 +9,7 @@ import {
   DEFAULT_HOLDER_REWARD_BPS,
   DEFAULT_PAIR_MINT_ADDRESS,
   DEFAULT_PAIR_TYPE,
+  MAX_PROPOSAL_IMAGE_BYTES,
   MAX_HOLDER_REWARD_BPS,
   MIN_HOLDER_REWARD_BPS,
   PAIR_TYPE_LABELS,
@@ -19,6 +20,9 @@ import {
   type LaunchProposalFormInput,
   type LaunchProposalInput,
 } from './lib/launch-validation';
+import { filterTokenCatalog, unconfiguredTokenCatalog, type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
+import { unconfiguredPairCompatibilityServer, type PairCompatibilityResult } from './lib/pair-compatibility';
+import './proposal.css';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
 const ACTIVITY_KEY = 'fairlaunch.demo.activity.v1';
@@ -191,10 +195,10 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
         <p className="detail-content">{launch.description}</p>
         <div className="pair-summary" data-testid="launch-pair-settings">
           <div className="pair-summary-item"><span className="stat-label">Trading pair type</span><span className="stat-value">{PAIR_TYPE_LABELS[launch.pairType]}</span></div>
-          <div className="pair-summary-item"><span className="stat-label">Pair mint address</span><span className="stat-value mono" title={launch.pairMintAddress}>{shortAddress(launch.pairMintAddress)}</span></div>
+          <div className="pair-summary-item"><span className="stat-label">Pair token</span><span className="stat-value">{launch.pairToken?.source === 'catalog' ? `${launch.pairToken.name} ($${launch.pairToken.ticker})` : launch.pairToken?.source === 'manual' ? 'Manual mint' : 'Mint address'}</span><span className="field-hint mono" title={launch.pairMintAddress}>{shortAddress(launch.pairMintAddress)}</span></div>
           <div className="pair-summary-item"><span className="stat-label">Holder Rewards · demo setting</span><span className="stat-value">{(launch.holderRewardBps / 100).toFixed(2)}%</span></div>
         </div>
-        <div className="pair-validation-note">Pair support and reward-rate eligibility have not been checked with Pump.fun.</div>
+        <div className="pair-validation-note" data-testid="status-launch-pair-check">Not checked. Pair support and reward-rate eligibility have not been checked with Pump.fun.</div>
         <div className="detail-stats">
           <div className="detail-stat"><span className="stat-label">Participants</span><span className="stat-value">{launch.participantCount} / {launch.targetParticipantCount}</span></div>
           <div className="detail-stat"><span className="stat-label">Demo amount shown</span><span className="stat-value">${launch.committedAmountUsd.toLocaleString()}</span></div>
@@ -227,57 +231,278 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
   </main>;
 }
 
-function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => void }) {
+function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => boolean }) {
   const [submittedProposal, setSubmittedProposal] = useState<LaunchProposalInput | null>(null);
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
+  const [tokenSearch, setTokenSearch] = useState('');
+  const [catalogTokens, setCatalogTokens] = useState<TokenCatalogEntry[]>([]);
+  const [catalogConnected, setCatalogConnected] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [selectedToken, setSelectedToken] = useState<SelectedPairToken | null>(null);
+  const [manualMint, setManualMint] = useState('');
+  const [manualMintTouched, setManualMintTouched] = useState(false);
+  const [showAdvancedMint, setShowAdvancedMint] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [imageName, setImageName] = useState('');
+  const [imageSize, setImageSize] = useState(0);
+  const [imageReading, setImageReading] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [compatibility, setCompatibility] = useState<PairCompatibilityResult>({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
+  const imageInput = useRef<HTMLInputElement>(null);
+  const catalogSearchInput = useRef<HTMLInputElement>(null);
+  const tokenTrigger = useRef<HTMLButtonElement>(null);
+  const tokenModal = useRef<HTMLElement>(null);
+  const imageRequest = useRef(0);
   const form = useForm<LaunchProposalFormInput>({
     resolver: zodResolver(launchProposalSchema),
-    defaultValues: {
-      name: '',
-      ticker: '',
-      pairType: '',
-      pairMintAddress: '',
-      holderRewardBps: DEFAULT_HOLDER_REWARD_BPS,
-      imageUrl: '',
-      sourceUrl: '',
-      description: '',
-    },
+    defaultValues: { name: '', ticker: '', pairType: '', pairMintAddress: '', holderRewardBps: DEFAULT_HOLDER_REWARD_BPS, imageUrl: '', sourceUrl: '', description: '' },
   });
   const holderRewardBps = form.watch('holderRewardBps') ?? DEFAULT_HOLDER_REWARD_BPS;
   const descriptionLength = form.watch('description')?.length ?? 0;
+  const pairTypeValue = form.watch('pairType');
+  const mintValue = form.watch('pairMintAddress') ?? '';
+  const imageData = form.watch('imageUrl') ?? '';
+  const validManualMint = isValidSolanaMintAddress(manualMint);
 
-  function submit(values: LaunchProposalFormInput) {
-    if (!isPairType(values.pairType)) return;
-    const proposal: LaunchProposalInput = { ...values, pairType: values.pairType };
-    onAdd(proposal);
-    setSubmittedProposal(proposal);
+  useEffect(() => {
+    if (!tokenDialogOpen) return;
+    catalogSearchInput.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setTokenDialogOpen(false);
+        tokenTrigger.current?.focus();
+      }
+      if (event.key === 'Tab') {
+        const controls = tokenModal.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]');
+        const first = controls?.[0];
+        const last = controls?.[controls.length - 1];
+        if (first && last && event.shiftKey && (document.activeElement === first || !tokenModal.current?.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (first && last && !event.shiftKey && (document.activeElement === last || !tokenModal.current?.contains(document.activeElement))) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [tokenDialogOpen]);
+
+  useEffect(() => {
+    if (!tokenDialogOpen) return;
+    let alive = true;
+    setCatalogLoading(true);
+    setCatalogError('');
+    const timer = window.setTimeout(() => {
+      unconfiguredTokenCatalog.search(tokenSearch).then(result => {
+        if (!alive) return;
+        setCatalogConnected(result.status === 'connected');
+        setCatalogTokens(result.status === 'connected' ? filterTokenCatalog(result.tokens, tokenSearch) : []);
+      }).catch(() => {
+        if (!alive) return;
+        setCatalogTokens([]);
+        setCatalogConnected(false);
+        setCatalogError('The token catalog could not be loaded. Try another search or use a mint address.');
+      }).finally(() => { if (alive) setCatalogLoading(false); });
+    }, 150);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [tokenDialogOpen, tokenSearch]);
+
+  useEffect(() => {
+    if (!selectedToken || !isPairType(pairTypeValue)) {
+      setCompatibility({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
+      return;
+    }
+    let alive = true;
+    setCompatibility({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
+    unconfiguredPairCompatibilityServer.check({ pairType: pairTypeValue, mintAddress: selectedToken.mintAddress, holderRewardBps }).then(result => {
+      if (alive) setCompatibility(result);
+    }).catch(() => {
+      if (alive) setCompatibility({ status: 'not-checked', message: 'The server check could not be completed.' });
+    });
+    return () => { alive = false; };
+  }, [selectedToken, pairTypeValue, holderRewardBps]);
+
+  function chooseToken(token: SelectedPairToken) {
+    setSelectedToken(token);
+    form.setValue('pairMintAddress', token.mintAddress, { shouldDirty: true, shouldValidate: true });
+    setManualMint(token.source === 'manual' ? token.mintAddress : '');
+    setManualMintTouched(false);
+    setTokenDialogOpen(false);
+    tokenTrigger.current?.focus();
   }
 
-  if (submittedProposal) return <main className="main"><div className="page-top"><span className="section-kicker">Proposal saved / demo</span></div><div className="empty-state" data-testid="success-proposal"><div className="empty-mark"><Check size={19} /></div><h3>Your idea has a demo page</h3><p>{submittedProposal.name} is saved as a local proposal. This does not create or launch a token, check pair eligibility, calculate rewards, or send a transaction.</p><div className="proposal-result-meta"><span>{PAIR_TYPE_LABELS[submittedProposal.pairType]}</span><span>Holder Rewards {(submittedProposal.holderRewardBps / 100).toFixed(2)}%</span></div><div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}><Link href="/" className="button button-primary" data-testid="button-proposal-home">Explore launches</Link><button className="button button-quiet" onClick={() => { setSubmittedProposal(null); form.reset(); }} data-testid="button-propose-another">Propose another</button></div></div><Footer /></main>;
-  return <main className="main">
-    <div className="page-top"><span className="section-kicker">Start with the story / 03</span><h1 className="page-title">Propose a meme.</h1><p className="page-intro">Give the community something worth showing up for. Your proposal becomes a demo launch page only — no token is created and no funds are collected.</p></div>
-    <div className="form-layout">
+  function chooseImage(file?: File) {
+    if (!file) return;
+    const request = ++imageRequest.current;
+    setImageReading(false);
+    if (imageInput.current) imageInput.current.value = '';
+    const ext = file.name.toLowerCase().match(/\.(png|jpe?g|webp)$/)?.[1];
+    const expectedMime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext ? 'image/jpeg' : '';
+    if (!ext || !expectedMime || file.type !== expectedMime) {
+      setImageError('Choose a PNG, JPG, JPEG, or WebP image with a matching file type.');
+      return;
+    }
+    if (file.size > MAX_PROPOSAL_IMAGE_BYTES) {
+      setImageError('This image is over 2 MB. Choose a smaller file.');
+      return;
+    }
+    setImageReading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (request !== imageRequest.current) return;
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) {
+        setImageReading(false);
+        setImageError('This image could not be read. Try another file.');
+        return;
+      }
+      const decodedImage = new Image();
+      decodedImage.onload = () => {
+        if (request !== imageRequest.current) return;
+        form.setValue('imageUrl', dataUrl, { shouldDirty: true, shouldValidate: true });
+        setImageName(file.name);
+        setImageSize(file.size);
+        setImageError('');
+        setImageReading(false);
+      };
+      decodedImage.onerror = () => {
+        if (request !== imageRequest.current) return;
+        setImageReading(false);
+        setImageError('This file could not be decoded as an image. Choose another PNG, JPG, or WebP.');
+      };
+      decodedImage.src = dataUrl;
+    };
+    reader.onerror = () => {
+      if (request !== imageRequest.current) return;
+      setImageReading(false);
+      setImageError('This image could not be read. Try another file.');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeImage() {
+    imageRequest.current += 1;
+    setImageReading(false);
+    form.setValue('imageUrl', '', { shouldDirty: true, shouldValidate: true });
+    setImageName('');
+    setImageSize(0);
+    setImageError('');
+    if (imageInput.current) imageInput.current.value = '';
+  }
+
+  function resetProposal() {
+    imageRequest.current += 1;
+    setImageReading(false);
+    setSubmittedProposal(null);
+    setSelectedToken(null);
+    setManualMint('');
+    setManualMintTouched(false);
+    setShowAdvancedMint(false);
+    setImageName('');
+    setImageSize(0);
+    setImageError('');
+    setSaveError('');
+    setCompatibility({ status: 'not-checked', message: 'Pair compatibility has not been checked.' });
+    form.reset();
+    if (imageInput.current) imageInput.current.value = '';
+  }
+
+  function submit(values: LaunchProposalFormInput) {
+    setSaveError('');
+    if (imageReading) return;
+    if (!isPairType(values.pairType) || !selectedToken || selectedToken.mintAddress !== values.pairMintAddress) {
+      form.setError('pairMintAddress', { message: 'Select a pair token or enter a valid mint in the token dialog.' });
+      return;
+    }
+    const proposal: LaunchProposalInput = { ...values, pairType: values.pairType, pairToken: selectedToken };
+    if (onAdd(proposal)) setSubmittedProposal(proposal);
+    else setSaveError('Your proposal could not be saved because browser storage is full or unavailable. Try a smaller image or free up storage, then save again. Your form has not been cleared.');
+  }
+
+  if (submittedProposal) return <main className="main proposal-update proposal-main">
+    <div className="page-top"><span className="section-kicker">Proposal saved / demo</span></div>
+    <div className="empty-state" data-testid="success-proposal"><div className="empty-mark"><Check size={19} /></div><h3>Your idea has a demo page</h3><p>{submittedProposal.name} is saved in this browser only. This does not create or launch a token, check pair eligibility, calculate rewards, or send a transaction.</p><div className="proposal-result-meta"><span>{PAIR_TYPE_LABELS[submittedProposal.pairType]}</span><span>Holder Rewards {(submittedProposal.holderRewardBps / 100).toFixed(2)}%</span></div><div className="proposal-result-actions"><Link href="/" className="button button-primary" data-testid="button-proposal-home">Explore launches</Link><button className="button button-quiet" onClick={resetProposal} data-testid="button-propose-another">Propose another</button></div></div><Footer />
+  </main>;
+
+  return <main className="main proposal-update proposal-main">
+    <div className="proposal-hero">
+      <div className="page-top"><span className="section-kicker">Start with the story <span className="step-divider">/</span> 03</span><h1 className="page-title">Propose a <em>meme.</em></h1><p className="page-intro">Give the community something worth showing up for. Your proposal becomes a demo launch page only — no token is created and no funds are collected.</p></div>
+      <div className="hero-stamp"><span className="stamp-orbit"><ShieldCheck size={15} /></span><span>Community<br />idea board</span></div>
+    </div>
+    <div className="form-layout proposal-layout">
       <Form {...form}>
-      <form className="panel" onSubmit={form.handleSubmit(submit)} data-testid="form-propose">
-        <h2>Tell us what the internet made</h2>
-        <FormField control={form.control} name="name" render={({ field, fieldState }) => <div className="field"><label htmlFor="token-name">Token name</label><input {...field} id="token-name" placeholder="e.g. The Last Braincell" maxLength={48} data-testid="input-token-name" required aria-invalid={fieldState.invalid} />{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <FormField control={form.control} name="ticker" render={({ field, fieldState }) => <div className="field"><label htmlFor="token-ticker">Ticker</label><input {...field} id="token-ticker" onChange={event => field.onChange(event.target.value.toUpperCase())} placeholder="e.g. BRAIN" maxLength={10} data-testid="input-token-ticker" required aria-invalid={fieldState.invalid} /><div className="field-hint">2–10 letters or numbers. It will display as a ticker only.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <FormField control={form.control} name="pairType" render={({ field, fieldState }) => <div className="field"><label htmlFor="pair-type">Trading pair type</label><select {...field} id="pair-type" value={field.value ?? ''} data-testid="select-pair-type" required aria-invalid={fieldState.invalid}><option value="" disabled>Choose a pair category</option>{PAIR_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <FormField control={form.control} name="pairMintAddress" render={({ field, fieldState }) => <div className="field"><label htmlFor="pair-mint-address">Pair token mint address</label><input {...field} id="pair-mint-address" type="text" inputMode="text" autoComplete="off" spellCheck={false} minLength={32} maxLength={44} placeholder="Solana Base58 mint address" data-testid="input-pair-mint-address" required aria-invalid={fieldState.invalid} /><div className="field-hint">Enter the token mint address for the selected pair. This checks Base58 format and 32-byte length only.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <FormField control={form.control} name="holderRewardBps" render={({ field, fieldState }) => <div className="field reward-field"><div className="reward-slider-header"><label htmlFor="holder-reward-rate">Holder Rewards</label><strong data-testid="text-holder-reward-rate">{(holderRewardBps / 100).toFixed(2)}%</strong></div><input {...field} id="holder-reward-rate" type="range" min={MIN_HOLDER_REWARD_BPS} max={MAX_HOLDER_REWARD_BPS} step={1} value={holderRewardBps} onChange={event => field.onChange(Number(event.target.value))} data-testid="slider-holder-rewards" aria-label="Holder Rewards rate" aria-valuetext={`${(holderRewardBps / 100).toFixed(2)} percent`} aria-invalid={fieldState.invalid} /><div className="range-limits"><span>0.01%</span><span>3.00%</span></div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}<p className="rewards-explanation">Rewards are intended for eligible holders of the selected pair token, distributed under Pump.fun rules. This prototype does not calculate or distribute rewards.</p></div>} />
-        <FormField control={form.control} name="imageUrl" render={({ field, fieldState }) => <div className="field"><label htmlFor="image-url">Image URL <span className="field-hint">(optional)</span></label><input {...field} id="image-url" type="url" placeholder="https://..." data-testid="input-image-url" aria-invalid={fieldState.invalid} /><div className="field-hint">Display-only prototype value; not uploaded or verified.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <FormField control={form.control} name="sourceUrl" render={({ field, fieldState }) => <div className="field"><label htmlFor="source-url">Source URL <span className="field-hint">(optional)</span></label><input {...field} id="source-url" type="url" placeholder="Link to the original post or meme" data-testid="input-source-url" aria-invalid={fieldState.invalid} />{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <FormField control={form.control} name="description" render={({ field, fieldState }) => <div className="field"><label htmlFor="description">The story</label><textarea {...field} id="description" placeholder="What happened, and why is this one worth a shared shot?" maxLength={380} data-testid="input-description" required aria-invalid={fieldState.invalid} /><div className="field-hint">{descriptionLength}/380 characters</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
-        <div className="pair-validation-note" data-testid="notice-pair-validation">Pair availability and reward-rate eligibility are not verified in this frontend prototype. A future server check must validate them with the official Pump.fun SDK before any real launch.</div>
-        <button type="submit" className="button button-primary button-wide" style={{ marginTop: 5 }} data-testid="button-submit-proposal">Save demo proposal <ArrowUpRight size={15} /></button>
+      <form className="panel proposal-panel" onSubmit={form.handleSubmit(submit)} noValidate data-testid="form-propose">
+        <div className="form-heading"><div><span className="form-overline">Proposal details</span><h2>Tell us what the internet made</h2></div><span className="required-key"><i /> Required</span></div>
+        <section className="form-section" aria-labelledby="idea-section-title">
+          <div className="section-label"><span className="section-index">01</span><h3 id="idea-section-title">The idea</h3></div>
+          <div className="field-grid">
+            <FormField control={form.control} name="name" render={({ field, fieldState }) => <div className="field"><label htmlFor="proposal-name">Token name <span className="required-mark">*</span></label><input {...field} id="proposal-name" placeholder="e.g. The Last Braincell" maxLength={48} required data-testid="input-token-name" aria-invalid={fieldState.invalid} />{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+            <FormField control={form.control} name="ticker" render={({ field, fieldState }) => <div className="field"><label htmlFor="proposal-ticker">Ticker <span className="required-mark">*</span></label><div className="ticker-input"><span>$</span><input {...field} id="proposal-ticker" onChange={event => field.onChange(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))} placeholder="BRAIN" maxLength={10} required data-testid="input-token-ticker" aria-invalid={fieldState.invalid} /></div><div className="field-hint">2–10 letters or numbers. Display only.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+          </div>
+          <div className="field">
+            <div className="field-label-row"><label htmlFor="proposal-image">Idea image <span className="field-hint inline-hint">Optional</span></label><span className="file-spec">PNG · JPG · WEBP / 2 MB MAX</span></div>
+            {imageData ? <div className="image-preview-card"><img src={imageData} alt="Selected proposal artwork preview" data-testid="img-proposal-preview" /><div className="image-file-details"><strong>{imageName || 'Proposal image'}</strong><span>{(imageSize / 1024).toFixed(0)} KB · Stored in this browser</span></div><div className="image-actions"><button type="button" className="mini-action" onClick={() => imageInput.current?.click()} data-testid="button-replace-image"><Upload size={13} />Replace</button><button type="button" className="mini-action remove-action" onClick={removeImage} data-testid="button-remove-image"><X size={13} />Remove</button></div></div> :
+              <button type="button" className="upload-zone" onClick={() => imageInput.current?.click()} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); chooseImage(event.dataTransfer.files[0]); }} data-testid="button-upload-image"><span className="upload-icon"><FileImage size={19} /></span><span className="upload-copy"><strong>Choose an image</strong><span>or drop it here · PNG, JPG, WebP</span></span><span className="upload-cta"><Upload size={14} />Browse files</span></button>}
+            <input ref={imageInput} id="proposal-image" className="file-input-hidden" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={event => chooseImage(event.target.files?.[0])} aria-label="Upload proposal image" data-testid="input-proposal-image" />
+            {imageReading && <p className="field-hint" role="status" data-testid="status-image-reading">Preparing image preview…</p>}
+            {imageError && <p className="error-line" role="alert" data-testid="error-proposal-image"><AlertCircle size={13} />{imageError}</p>}
+            {form.formState.errors.imageUrl && <p className="error-line" role="alert">{form.formState.errors.imageUrl.message}</p>}
+            <p className="storage-notice"><Info size={13} />Image and proposal data are temporarily stored in this browser only, not in remote storage.</p>
+          </div>
+          <FormField control={form.control} name="description" render={({ field, fieldState }) => <div className="field"><label htmlFor="proposal-story">The story <span className="required-mark">*</span></label><textarea {...field} id="proposal-story" placeholder="What happened, and why is this one worth a shared shot?" maxLength={380} required data-testid="input-description" aria-invalid={fieldState.invalid} /><div className="story-meta"><span>Give people the context behind the meme.</span><span className={descriptionLength > 350 ? 'count-close' : ''}>{descriptionLength}<i>/</i>380</span></div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+          <FormField control={form.control} name="sourceUrl" render={({ field, fieldState }) => <div className="field"><label htmlFor="proposal-source">Source link <span className="field-hint inline-hint">Optional</span></label><input {...field} id="proposal-source" type="url" placeholder="Link to the original post or meme" data-testid="input-source-url" aria-invalid={fieldState.invalid} /><div className="field-hint">Credit the original spark, if there is one.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        </section>
+        <section className="form-section pair-section" aria-labelledby="pair-section-title">
+          <div className="section-label"><span className="section-index">02</span><h3 id="pair-section-title">Pair category</h3></div>
+          <FormField control={form.control} name="pairType" render={({ field, fieldState }) => <div className="field"><label>Trading pair type <span className="required-mark">*</span></label><div className="pair-options" role="radiogroup" aria-label="Trading pair type">{PAIR_TYPE_OPTIONS.map((option, index) => <button key={option.value} type="button" role="radio" aria-checked={field.value === option.value} className={`pair-option ${field.value === option.value ? 'selected' : ''}`} onClick={() => field.onChange(option.value)} data-testid={`button-pair-${option.value}`}><span className="pair-option-mark">{field.value === option.value ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span><span><strong>{option.label}</strong><small>{option.value === 'supported-memecoin' ? 'A community meme token' : option.value === 'tokenized-stock' ? 'A tokenized equity asset' : 'Another supported pair asset'}</small></span></button>)}</div><div className="field-hint">Choose the category that best describes the pair asset.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+          <div className="token-picker-block">
+            <div className="field-label-row"><label>Pair token <span className="required-mark">*</span></label><span className="field-hint inline-hint">Catalog lookup</span></div>
+            <button ref={tokenTrigger} type="button" className={`token-picker-button ${selectedToken ? 'has-token' : ''}`} onClick={() => { setTokenSearch(''); setCatalogTokens([]); setCatalogConnected(false); setManualMint(selectedToken?.source === 'manual' ? selectedToken.mintAddress : ''); setTokenDialogOpen(true); }} aria-haspopup="dialog" data-testid="button-select-pair-token"><span className="token-picker-icon"><Search size={16} /></span><span className="token-picker-text"><strong>{selectedToken?.source === 'catalog' ? `${selectedToken.name} ($${selectedToken.ticker})` : selectedToken ? 'Manual mint selected' : 'Select a token'}</strong><small>{selectedToken ? selectedToken.mintAddress : 'Search by name, ticker, or mint address'}</small></span><span className="picker-arrow"><ArrowUpRight size={15} /></span></button>
+            <FormField control={form.control} name="pairMintAddress" render={({ field, fieldState }) => <><input type="hidden" {...field} data-testid="input-pair-mint-address" />{selectedToken && <div className="selected-token-status"><span className="mono">{selectedToken.mintAddress}</span><span className="mint-status">{compatibility.status === 'not-checked' ? 'Not checked' : compatibility.status}</span></div>}{fieldState.error && <p className="error-line" role="alert" data-testid="error-pair-mint">{fieldState.error.message}</p>}</>} />
+          </div>
+          <div className="pair-validation-note compact-validation" data-testid="notice-pair-validation">Mint format checks only validate Base58 encoding and 32-byte length. Token existence, pair support, and Pump.fun eligibility are not checked.</div>
+        </section>
+        <section className="form-section rewards-section">
+          <div className="section-label"><span className="section-index">03</span><h3>Holder Rewards</h3></div>
+          <FormField control={form.control} name="holderRewardBps" render={({ field, fieldState }) => <><div className="reward-slider-header"><label htmlFor="holder-reward-rate">Proposed reward rate</label><strong data-testid="text-holder-reward-rate">{(holderRewardBps / 100).toFixed(2)}<span>%</span></strong></div><input {...field} id="holder-reward-rate" type="range" min={MIN_HOLDER_REWARD_BPS} max={MAX_HOLDER_REWARD_BPS} step={1} value={holderRewardBps} onChange={event => field.onChange(Number(event.target.value))} data-testid="slider-holder-rewards" aria-label="Holder Rewards rate" aria-valuetext={`${(holderRewardBps / 100).toFixed(2)} percent`} aria-invalid={fieldState.invalid} /><div className="range-limits"><span>0.01%</span><span>3.00%</span></div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</>} />
+          <div className="rewards-explanation"><Info size={15} /><p>Rewards are intended for eligible holders of the selected pair token, distributed under Pump.fun holder rules. Eligibility and distribution are not calculated or verified here.</p></div>
+        </section>
+        <div className="pair-validation-note"><ShieldCheck size={16} /><span><strong>Demo proposal only</strong><small>Compatibility status: {compatibility.status === 'not-checked' ? 'Not checked.' : compatibility.status}. No official SDK or server check is configured. No token, pool, or on-chain asset will be created.</small></span></div>
+        {saveError && <p className="form-error" role="alert" data-testid="error-proposal-save"><AlertCircle size={15} />{saveError}</p>}
+        <button type="submit" className="button button-primary button-wide save-button" disabled={imageReading || form.formState.isSubmitting} data-testid="button-submit-proposal">Save demo proposal <ArrowUpRight size={15} /></button>
+        <p className="submit-caption">Proposal data is stored in this browser only. No wallet, transaction, or remote storage.</p>
       </form>
       </Form>
-      <aside>
-        <div className="side-note"><h3>A launch page, not a launch</h3><p>This prototype stores a proposal in your browser and displays it as an open community idea. No token, pool, or on-chain asset will be created.</p></div>
-        <div className="side-note"><h3>One size for everyone</h3><p>Demo participation is fixed at $10, once per wallet per launch. There are no privileged creator shares or whale tiers.</p></div>
-        <div className="side-note"><h3>Server-side checks come later</h3><p>This form validates the mint address format and required fields only. It does not confirm token support or Pump.fun reward eligibility.</p></div>
+      <aside className="proposal-aside">
+        <div className="side-note side-note-featured"><span className="aside-number">01 / THE POINT</span><span className="aside-mark"><CheckCircle2 size={16} /></span><h3>A launch page,<br />not a launch.</h3><p>Your proposal is an open community idea. This prototype does not create a token, pool, or on-chain asset.</p><div className="aside-rule"><span /></div><div className="aside-tag">COMMUNITY FIRST, ALWAYS</div></div>
+        <div className="side-note"><span className="aside-number">02 / SAME RULES</span><h3>One size for everyone</h3><p>Demo participation is fixed at $10, once per wallet per launch. No privileged creator shares or whale tiers.</p></div>
+        <div className="side-note"><span className="aside-number">03 / WHAT'S NOT HERE</span><h3>Checks come later</h3><p>Mint format and required fields are checked in your browser. Token support and Pump.fun eligibility are not.</p></div>
+        <div className="privacy-card"><span className="privacy-icon"><ShieldCheck size={16} /></span><span><strong>Browser-only storage</strong><small>Your proposal and image are temporarily stored in this browser, not remote storage.</small></span></div>
       </aside>
     </div>
     <Footer />
+    {tokenDialogOpen && <div className="fu-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) { setTokenDialogOpen(false); tokenTrigger.current?.focus(); } }}>
+      <section ref={tokenModal} className="fu-modal token-modal" role="dialog" aria-modal="true" aria-labelledby="token-dialog-title" data-testid="dialog-token-selector">
+        <div className="fu-modal-top"><div><span className="modal-kicker">PAIR TOKEN / CATALOG</span><h2 id="token-dialog-title">Select a token</h2></div><button type="button" className="modal-close" onClick={() => { setTokenDialogOpen(false); tokenTrigger.current?.focus(); }} aria-label="Close token selector" data-testid="button-close-token-dialog"><X size={18} /></button></div>
+        <p className="modal-copy">Find a pair token by its name, ticker, or Solana mint address.</p>
+        <label className="token-search"><Search size={16} /><input ref={catalogSearchInput} value={tokenSearch} onChange={event => setTokenSearch(event.target.value)} placeholder="Search name, ticker, or mint" aria-label="Search token catalog" data-testid="input-token-search" /></label>
+        {catalogLoading ? <p className="catalog-empty" role="status" data-testid="status-catalog-loading">Loading token catalog…</p> : catalogError ? <p className="catalog-empty" role="alert" data-testid="error-token-catalog">{catalogError}</p> : catalogConnected && catalogTokens.length > 0 ? <div className="catalog-results" aria-label="Token catalog results">{catalogTokens.map(token => <button type="button" className="catalog-result" key={token.mintAddress} onClick={() => chooseToken({ ...token, source: 'catalog' })} data-testid={`button-catalog-token-${token.mintAddress}`}><span className="catalog-token-icon">{token.iconUrl ? <img src={token.iconUrl} alt="" /> : token.ticker.slice(0, 2)}</span><span><strong>{token.name} <small>${token.ticker}</small></strong><span className="mono" title={token.mintAddress}>{shortAddress(token.mintAddress)}</span></span></button>)}</div> :
+          <div className="catalog-empty" role="status" data-testid="status-catalog-empty"><span className="catalog-empty-icon"><Search size={20} /></span><strong>{catalogConnected ? 'No matching tokens' : 'Token catalog isn’t connected'}</strong><p>{catalogConnected ? 'No catalog entries match this search.' : 'No token results are available in this prototype. Nothing has been searched on-chain.'}</p></div>}
+        <div className="advanced-mint dialog-advanced">
+          <button className="advanced-toggle" type="button" aria-expanded={showAdvancedMint} onClick={() => setShowAdvancedMint(value => !value)} data-testid="button-toggle-manual-mint"><span><span className="advanced-bracket">+</span><span><strong>Advanced</strong><small>Enter a mint address manually</small></span></span><ChevronDown size={16} className={showAdvancedMint ? 'chevron-open' : ''} /></button>
+          {showAdvancedMint && <div className="advanced-content"><div className="field"><div className="field-label-row"><label htmlFor="manual-pair-mint">Pair token mint address</label>{manualMintTouched && manualMint && <span className={`mint-status ${validManualMint ? 'valid' : 'invalid'}`}>{validManualMint ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}{validManualMint ? 'Format valid · unverified' : 'Invalid format'}</span>}</div><input id="manual-pair-mint" value={manualMint} onChange={event => { setManualMint(event.target.value); setManualMintTouched(true); }} onBlur={() => setManualMintTouched(true)} inputMode="text" autoComplete="off" spellCheck={false} minLength={32} maxLength={44} placeholder="Solana Base58 mint address" aria-invalid={manualMintTouched && !!manualMint && !validManualMint} data-testid="input-manual-mint" /><div className="field-hint">Checks Base58 encoding and 32-byte length only. No network lookup is performed.</div>{manualMintTouched && manualMint && !validManualMint && <p className="error-line" role="alert">Enter a valid 32-byte Solana Base58 mint address.</p>}</div><div className="unverified-note"><ShieldCheck size={15} /><span><strong>Format check only</strong><small>This address is not checked for existence, pair support, or reward eligibility.</small></span></div><button type="button" className="button button-primary manual-select-button" disabled={!validManualMint} onClick={() => chooseToken({ source: 'manual', mintAddress: manualMint.trim() })} data-testid="button-use-manual-mint">Use this mint</button></div>}
+        </div>
+        <div className="fu-modal-footer"><span><Info size={13} />Catalog connection is not available in this prototype.</span><button type="button" className="button button-quiet" onClick={() => setShowAdvancedMint(true)} data-testid="button-enter-mint-manually">Enter mint manually</button></div>
+      </section>
+    </div>}
   </main>;
 }
 
@@ -352,14 +577,21 @@ function AppContent() {
     }
     setModal(null);
   };
-  const addLaunch = (proposal: LaunchProposalInput) => {
+  const addLaunch = (proposal: LaunchProposalInput): boolean => {
     const id = `${proposal.ticker.toLowerCase()}-${Date.now().toString(36)}`;
     const launch: Launch = {
       ...proposal, id, creatorWallet: wallet ? shortAddress(wallet) : 'Demo proposer',
       committedAmountUsd: 0, participantCount: 0, targetParticipantCount: 100,
       deadline: new Date(Date.now() + 7 * 86400000).toISOString(), status: 'active', participants: [],
     };
-    setLaunches(current => [launch, ...current]);
+    const nextLaunches = [launch, ...launches];
+    try {
+      localStorage.setItem(LAUNCH_KEY, JSON.stringify(nextLaunches));
+    } catch {
+      return false;
+    }
+    setLaunches(nextLaunches);
+    return true;
   };
   const startCommit = (launch: Launch) => { setSelectedLaunch(launch); setModal('commit'); };
   const confirmCommit = () => {

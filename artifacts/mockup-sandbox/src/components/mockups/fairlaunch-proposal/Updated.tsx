@@ -23,7 +23,7 @@ const PAIR_OPTIONS = [
   { value: 'other-supported-token', label: 'Other supported token', detail: 'Another eligible pair asset' },
 ] as const;
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 function validMint(value: string) {
   const address = value.trim();
@@ -98,7 +98,7 @@ export function Updated() {
     }
     if (file.size > MAX_IMAGE_BYTES) {
       setImageFile(null);
-      setImageError('This image is over 5 MB. Choose a smaller file.');
+      setImageError('This image is over 2 MB. Choose a smaller file.');
       return;
     }
     setImageFile(file);
@@ -216,7 +216,7 @@ export function Updated() {
                 </div>
               </div>
               <div className="field">
-                <div className="field-label-row"><label>Idea image <span className="field-hint inline-hint">Optional</span></label><span className="file-spec">PNG · JPG · WEBP / 5 MB MAX</span></div>
+                <div className="field-label-row"><label>Idea image <span className="field-hint inline-hint">Optional</span></label><span className="file-spec">PNG · JPG · WEBP / 2 MB MAX</span></div>
                 {imageFile && imagePreview ? (
                   <div className="image-preview-card">
                     <img src={imagePreview} alt="Selected proposal artwork preview" />
