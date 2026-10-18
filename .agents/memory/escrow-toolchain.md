@@ -14,3 +14,9 @@ Agave 3.1.10's `solana-test-validator` requires `IORING_FEAT_NODROP` and `IORING
 **Why:** the requested toolchain must be supported safely; the validator cannot start under this host's syscall policy.
 
 **How to apply:** preflight both required io_uring features, then run integration tests on an Ubuntu 24.04 VM that permits them. Keep local tools under the ignored workspace `.local/share`, because this host's `$HOME/.local/share` was cleared during a runtime refresh.
+
+Agave's SBF builder may invoke Cargo through rustup to read Cargo metadata before compiling. Install and select host Rust `1.89.0`, set both `rustup default 1.89.0` and `RUSTUP_TOOLCHAIN=1.89.0`, and pass the same `CARGO_HOME`, `RUSTUP_HOME`, and toolchain selection into `cargo-build-sbf`. Its explicit `+solana` override still selects the platform-tools SBF compiler.
+
+**Why:** GitHub Actions failed when rustup had no default Cargo toolchain, before the pinned SBF compiler could build the program.
+
+**How to apply:** in the builder's exact child environment, verify `rustc --version`, `cargo --version`, and `rustup show active-toolchain`, then run locked Cargo metadata before invoking the pinned SBF builder.

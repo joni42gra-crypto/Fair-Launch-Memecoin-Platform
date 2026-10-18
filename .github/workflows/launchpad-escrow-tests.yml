@@ -33,6 +33,7 @@ jobs:
       ESCROW_RUSTUP_HOME: ${{ github.workspace }}/.local/share/launchpad-tools/rustup
       CARGO_HOME: ${{ github.workspace }}/.local/share/launchpad-tools/rustup-cargo
       RUSTUP_HOME: ${{ github.workspace }}/.local/share/launchpad-tools/rustup
+      RUSTUP_TOOLCHAIN: "1.89.0"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -72,8 +73,10 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL \
             https://sh.rustup.rs \
             -o /tmp/rustup-install.sh
-          sh /tmp/rustup-install.sh -y --no-modify-path --default-toolchain none
+          sh /tmp/rustup-install.sh -y --no-modify-path --default-toolchain 1.89.0
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          "$CARGO_HOME/bin/rustup" toolchain install 1.89.0 --profile minimal
+          "$CARGO_HOME/bin/rustup" default 1.89.0
           "$CARGO_HOME/bin/rustup" --version
 
       - name: Verify pinned Anchor and Pyth dependencies
@@ -93,7 +96,21 @@ jobs:
           test "$(pnpm --version)" = "10.26.1"
           pnpm install --frozen-lockfile
 
+      - name: Verify active Rust 1.89.0 before SBF build
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc_version="$(rustc --version)"
+          cargo_version="$(cargo --version)"
+          active_toolchain="$(rustup show active-toolchain)"
+          printf '%s\n' "$rustc_version" "$cargo_version" "$active_toolchain"
+          grep -q '^rustc 1\.89\.0 ' <<< "$rustc_version"
+          grep -q '^cargo 1\.89\.0 ' <<< "$cargo_version"
+          grep -q '^1\.89\.0\([ -]\|$\)' <<< "$active_toolchain"
+
       - name: Run local escrow integration tests
+        env:
+          ESCROW_ALWAYS_BUILD: "1"
         run: pnpm --filter @workspace/launchpad-escrow-tests test
 
       - name: Verify the SBF Rust compiler version

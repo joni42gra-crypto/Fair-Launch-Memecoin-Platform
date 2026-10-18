@@ -20,6 +20,7 @@ const ledgerDir = path.join(
   os.tmpdir(),
   `launchpad-escrow-validator-${process.pid}`,
 );
+const rustToolchain = "1.89.0";
 const localToolsDir = path.join(workspaceRoot, ".local/share");
 const solanaBin =
   process.env.ESCROW_SOLANA_BIN ??
@@ -42,6 +43,52 @@ function run(command, args, options = {}) {
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} exited with status ${result.status}`);
+  }
+}
+
+function capture(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd ?? onchainDir,
+    env: options.env ?? process.env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    const details = result.stderr.trim();
+    throw new Error(
+      `${command} exited with status ${result.status}${details ? `: ${details}` : ""}`,
+    );
+  }
+  return result.stdout.trim();
+}
+
+function verifyRustToolchain(env) {
+  const checks = [
+    {
+      command: "rustc",
+      args: ["--version"],
+      pattern: /^rustc 1\.89\.0(?:\s|$)/,
+    },
+    {
+      command: "cargo",
+      args: ["--version"],
+      pattern: /^cargo 1\.89\.0(?:\s|$)/,
+    },
+    {
+      command: "rustup",
+      args: ["show", "active-toolchain"],
+      pattern: /^1\.89\.0(?:[-\s]|$)/,
+    },
+  ];
+  for (const check of checks) {
+    const output = capture(check.command, check.args, { env });
+    console.log(`${check.command}: ${output}`);
+    if (!check.pattern.test(output)) {
+      throw new Error(
+        `Expected Rust toolchain ${rustToolchain}, got "${output}" from ${check.command}.`,
+      );
+    }
   }
 }
 
@@ -123,14 +170,31 @@ try {
   const validatorBinary = path.join(solanaBin, "solana-test-validator");
   await access(validatorBinary);
 
+  // Pin host Cargo for builder metadata; cargo-build-sbf keeps its explicit +solana SBF override.
   const rustupEnv = {
     ...process.env,
     CARGO_HOME: cargoHome,
     RUSTUP_HOME: rustupHome,
+    RUSTUP_TOOLCHAIN: rustToolchain,
     PATH: [path.join(cargoHome, "bin"), solanaBin, process.env.PATH ?? ""].join(
       path.delimiter,
     ),
   };
+  verifyRustToolchain(rustupEnv);
+  capture(
+    "cargo",
+    [
+      "metadata",
+      "--format-version",
+      "1",
+      "--no-deps",
+      "--manifest-path",
+      path.join(onchainDir, "programs/launchpad-escrow/Cargo.toml"),
+      "--locked",
+    ],
+    { cwd: onchainDir, env: rustupEnv },
+  );
+  console.log("Cargo metadata completed with Rust toolchain 1.89.0.");
 
   if (
     process.env.ESCROW_ALWAYS_BUILD === "1" ||

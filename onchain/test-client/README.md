@@ -46,9 +46,12 @@ sh /tmp/agave-v3.1.10-install.sh v3.1.10 \
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://sh.rustup.rs \
   -o /tmp/rustup-install.sh
-RUSTUP_HOME="$PWD/.local/share/launchpad-tools/rustup" \
-CARGO_HOME="$PWD/.local/share/launchpad-tools/rustup-cargo" \
-  sh /tmp/rustup-install.sh -y --no-modify-path --default-toolchain none
+export RUSTUP_HOME="$PWD/.local/share/launchpad-tools/rustup"
+export CARGO_HOME="$PWD/.local/share/launchpad-tools/rustup-cargo"
+sh /tmp/rustup-install.sh -y --no-modify-path --default-toolchain 1.89.0
+"$CARGO_HOME/bin/rustup" toolchain install 1.89.0 --profile minimal
+"$CARGO_HOME/bin/rustup" default 1.89.0
+export RUSTUP_TOOLCHAIN=1.89.0
 
 corepack prepare pnpm@10.26.1 --activate
 pnpm install --frozen-lockfile
@@ -62,6 +65,11 @@ declared in the Rust program, creates synthetic
 `PriceUpdateV2` accounts, starts `solana-test-validator` bound to
 `127.0.0.1:18999`, runs the tests, and removes the temporary ledger and
 fixtures. It does not connect to Devnet or Mainnet.
+Before SBF compilation it explicitly selects host Rust `1.89.0` for the
+builder process and verifies `rustc`, `cargo`, `rustup show active-toolchain`,
+and locked Cargo metadata in that same environment. Agave's builder still uses
+its explicit `+solana` override for the SBF compiler. GitHub Actions forces a
+fresh SBF build on every run.
 
 The fixture accounts let the tests exercise the program's owner, full-verification
 flag, exact SOL/USD feed ID, publish-time, positive-price, confidence, quote
