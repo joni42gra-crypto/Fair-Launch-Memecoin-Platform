@@ -83,6 +83,12 @@ components:
         - memecoin
         - pumpfun-coin
         - other
+    PairAssetGroup:
+      type: string
+      enum:
+        - xstocks
+        - backpack
+        - crypto
     SupportedPairAsset:
       type: object
       properties:
@@ -97,6 +103,8 @@ components:
           minLength: 1
         category:
           $ref: "#/components/schemas/PairAssetCategory"
+        assetGroup:
+          $ref: "#/components/schemas/PairAssetGroup"
         iconUrl:
           type: ["string", "null"]
           format: uri
@@ -111,6 +119,7 @@ components:
         - name
         - ticker
         - category
+        - assetGroup
         - iconUrl
         - catalogStatus
         - compatibilityStatus

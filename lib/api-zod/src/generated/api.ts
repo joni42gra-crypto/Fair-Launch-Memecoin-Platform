@@ -48,6 +48,7 @@ export const SearchSupportedPairAssetsResponse = zod.object({
   "name": zod.string().min(1),
   "ticker": zod.string().min(1),
   "category": zod.enum(['native', 'stablecoin', 'tokenized-stock', 'tokenized-asset', 'wrapped', 'protocol', 'platform', 'community', 'memecoin', 'pumpfun-coin', 'other']),
+  "assetGroup": zod.enum(['xstocks', 'backpack', 'crypto']),
   "iconUrl": zod.string().url().nullable(),
   "catalogStatus": zod.enum(['listed']),
   "compatibilityStatus": zod.enum(['not-checked'])

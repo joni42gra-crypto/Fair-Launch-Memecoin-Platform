@@ -26,6 +26,15 @@ export const PairAssetCategory = {
   other: 'other',
 } as const;
 
+export type PairAssetGroup = typeof PairAssetGroup[keyof typeof PairAssetGroup];
+
+
+export const PairAssetGroup = {
+  xstocks: 'xstocks',
+  backpack: 'backpack',
+  crypto: 'crypto',
+} as const;
+
 export type SupportedPairAssetCatalogStatus = typeof SupportedPairAssetCatalogStatus[keyof typeof SupportedPairAssetCatalogStatus];
 
 
@@ -48,6 +57,7 @@ export interface SupportedPairAsset {
   /** @minLength 1 */
   ticker: string;
   category: PairAssetCategory;
+  assetGroup: PairAssetGroup;
   /** @nullable */
   iconUrl: string | null;
   catalogStatus: SupportedPairAssetCatalogStatus;

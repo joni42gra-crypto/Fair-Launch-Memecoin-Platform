@@ -14,12 +14,14 @@ export type PairAssetCategory =
   | 'other';
 
 export type CatalogMembershipStatus = 'listed' | 'not-listed' | 'unknown';
+export type PairAssetGroup = 'xstocks' | 'backpack' | 'crypto';
 
 export type TokenCatalogEntry = {
   mintAddress: string;
   name: string;
   ticker: string;
   category?: PairAssetCategory;
+  assetGroup?: PairAssetGroup;
   iconUrl?: string | null;
   catalogStatus?: CatalogMembershipStatus;
   compatibilityStatus?: PairCompatibilityStatus;

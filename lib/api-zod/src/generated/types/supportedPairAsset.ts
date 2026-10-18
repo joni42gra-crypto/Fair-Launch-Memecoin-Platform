@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PairAssetCategory } from './pairAssetCategory';
+import type { PairAssetGroup } from './pairAssetGroup';
 import type { SupportedPairAssetCatalogStatus } from './supportedPairAssetCatalogStatus';
 import type { SupportedPairAssetCompatibilityStatus } from './supportedPairAssetCompatibilityStatus';
 
@@ -17,6 +18,7 @@ export interface SupportedPairAsset {
   /** @minLength 1 */
   ticker: string;
   category: PairAssetCategory;
+  assetGroup: PairAssetGroup;
   /** @nullable */
   iconUrl: string | null;
   catalogStatus: SupportedPairAssetCatalogStatus;

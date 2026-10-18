@@ -11,12 +11,19 @@ export type PairAssetCategory =
   | "pumpfun-coin"
   | "other";
 
+export type PairAssetGroup = "xstocks" | "backpack" | "crypto";
+
 export type SupportedPairRow = readonly [
   ticker: string,
   name: string,
   mintAddress: string,
   category: PairAssetCategory,
 ];
+
+export type SupportedPairAssetGroups = {
+  xstocks: readonly string[];
+  backpack: readonly string[];
+};
 
 export const supportedPairCatalog = {
   sourceUrl: "https://pump.fun/docs/custom-pairs",
@@ -179,4 +186,77 @@ export const supportedPairCatalog = {
     ["ZCAT", "Anonymous Cat", "HcRLc9VDgjLeK154xDawfb1dmVJ98DoSqcwTHGqiDeJR", "memecoin"],
     ["STONK", "STONK", "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx", "platform"],
   ] satisfies readonly SupportedPairRow[],
+  assetGroups: {
+    xstocks: [
+      "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
+      "Xs6B6zawENwAbWVi7w92rjazLuAr5Az59qgWKcNb45x",
+      "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W",
+      "Xsv9hRk1z5ystj9MhnA7Lq4vjSsLwzL2nxrwmwtD3re",
+      "XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN",
+      "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB",
+      "XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg",
+      "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+      "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1",
+      "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg",
+      "Xs7ZdzSHLU9ftNJsii5fCeJhoRWSC32SQGzGQtePxNu",
+      "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
+      "Xsa62P5mvPszXL1krVUnU5ar38bBSVcWAB6fmPCo5Zu",
+      "Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ",
+      "XsqE9cRRpzxcGKDXj1BJ7Xmg4GRhZoyY1KpmGSxAWT2",
+      "XsgSaSvNSqLTtFuyWPBhK9196Xb9Bbdyjj4fH3cPJGo",
+      "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX",
+      "XsoBhf2ufR8fTyNSjqfU71DYGaE6Z3SUGAidpzriAA4",
+      "Xs78JED6PFZxWc2wCEPspZW9kL3Se5J7L5TChKgsidH",
+      "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+      "Xsf9mBktVB9BSU5kf4nHxPq5hCBJ2j2ui3ecFGxPRGc",
+      "XshPgPdXFRWB8tP1j82rebb2Q9rPgGX37RuqzohmArM",
+      "XsfCC9VL4DamVGNgdJpfLXB3sBVa158Gbx8sh7NzmTk",
+      "Xs2yquAgsHByNzx68WJC55WHjHBvG9JsMB7CWjTLyPy",
+    ],
+    backpack: [
+      "NKEda5nHhNGgjrE9nDdMvaEmkmJ96qqxzBVZEcKmjSg",
+      "AMC1qwR9KhiyrQBRPrxnfo4JfMeMZqEBvt5tgTytNNoc",
+      "GPRR2u6NS5yBQHWGauoJ9HXgjrTH8dDsrBfTV5zAYvDH",
+      "LLYuwZ33keFihgwoxXsBawy31AiRFLFSva32TYq5TvD",
+      "MRNAzXzhNcaEXJPibHEn8cd4vyekCDiivTyEwswLUCT",
+      "iNTCy1qTsUEZQe3DSocLz1ZXXai34Gdw8THQh5rxFaF",
+      "HooDYv5RewLRiMLnEVq3VJqdqxhuE6c5eYvqejMC3e9A",
+      "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3",
+      "BoTx8y9ynfdxf5ZjWtCoBVkff52qKA82ysaLU8ZM6d8T",
+      "DRAMjSWR7HRfJKjRkvQWYL2bcaejaVhuxEcjf4pAY4Cw",
+      "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH",
+      "MUxEsUKSMACyw5fZf68wxf5FLnZVhtU9CwH8uNNGay1",
+      "BPxxfRCXkUVhig4HS1Lh7kZqV6SPJhzfEk4x6fVBjPCy",
+      "TTWofwAge91oFhZs7kpQdyrVRkmevgM88xijGvQFbKo",
+      "NBiSF3UaVUFtRzHwAfxyHsBCAZWGEKnMpewAE4oh7BG",
+      "MRVLSjkR2ceUBukujaD3xCyHP1H3B2SzpsNTZF546jo",
+      "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb",
+      "BArimz1PcKZr8PcPh3tcZ2dg4S7FJLk3cw6R5F8GsHKg",
+      "DJTu7vi8norVzdVAffgvb39VP7wjKeTsgaMBJrzfxvoF",
+      "HiMSSzzwkZkrXJ4PGVJRdtfLaANeAztjjcgk5Dxe7Lwx",
+      "BMKdM4yUxX12moFqVk195k7coMbaybd4RUKCUdm7D1Sk",
+      "JNJg1znKdF712Phe7L7z52AATAvEjEytBdN2w8Lnh1Y",
+      "LMT3i1BHgixFqPUgcyteJhnEz2dpy9i3cYy4pi9BoeV",
+      "LULUmT9VMttkfAJE236LXJcYJ2tTP7nunrSWR5G1BdS",
+      "MGMuubtUEirmkhfEQdmGUh4pr7HuUdMWcZXFtpPbVJD",
+      "PFER6ENqP8r8NF3CqVt4mFowxsin3V5MLidBNQFCC3x",
+      "QUBTAD8C9bMU9LvmMNgKPhrmBGbHvxpu6vfWQtThxxw",
+      "RBLXDGRD64AtRamHMFVcjqne3Ar7NLWtFtYNtsrf1cE",
+      "RDDTGbhHwVXfyCvQMXzzowKjf5qrYBZAnehoXW83ooh",
+      "RcZmt84VMJv9bDhKqmw1uWDahYrUT468VwAChTnfD8p",
+      "SH55hfaipFAbwT42nQYhRoM5o5t61QpkmJ6p62vXB3m",
+      "SNAPcESrvnH8yUdgeMF6xm1hym9b6hW6s8YeqeHdZFz",
+      "UPSqUeMHcWbkdg784XuBUEF9DtySSnW9ur5LAVdcuB9",
+      "BABANGA4JE7Kkam4nTrALAwAVgsNJUuFJnnkF7S16BZp",
+      "BULL151gUXcFV5wXEUqu9Am2L7Qt4bTJRLRuAUjkcspC",
+      "CZEB3WNZuF2Yz1z2H81RcCk8T7fsw82KB33zqamASVsg",
+      "DELL2aRKQz7DMq5DrKLtkn47ZCnbxXPZXrSGbkmd13wy",
+      "DKNGQFNGQmoBdXSRGKJ8tTu7uPDasw5JDcfMmWniNfow",
+      "GRNDYDpqwpCm6jVxpbh4xT5AM4r3p391qYsKTHqgaET2",
+      "DNUTsCvKbKwu2RM72cUuW3TD9YpzArzACcqYQssjPLSk",
+      "WENAZ2WyPbmgvUcKfQ8hyMDfBQP9bZ65hsZ5KTFrRGZ",
+      "HTZsLG4zqaNvWMwXSLHH3GG5KyJpKwpBRsKVdMG6hvzP",
+      "SPHRp8cZaSQBTp1KMNP4V1X821SXhXWt4Q2yLdyHzju",
+    ],
+  } satisfies SupportedPairAssetGroups,
 };

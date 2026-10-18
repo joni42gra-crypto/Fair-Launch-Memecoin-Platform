@@ -9,6 +9,7 @@
 export * from './apiError';
 export * from './healthStatus';
 export * from './pairAssetCategory';
+export * from './pairAssetGroup';
 export * from './searchSupportedPairAssetsParams';
 export * from './supportedPairAsset';
 export * from './supportedPairAssetCatalogStatus';

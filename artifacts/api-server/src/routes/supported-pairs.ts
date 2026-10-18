@@ -7,7 +7,8 @@ import {
 import { supportedPairCatalog } from "../data/supported-pair-assets";
 
 const router: IRouter = Router();
-const MAX_RESULTS = 50;
+const xstocksMints = new Set(supportedPairCatalog.assetGroups.xstocks);
+const backpackMints = new Set(supportedPairCatalog.assetGroups.backpack);
 
 function apiError(message: string): ApiError {
   return { error: message };
@@ -35,17 +36,22 @@ router.get("/tokens/supported-pairs", (req, res): void => {
   try {
     const rawSearch = parsed.data.query ?? "";
     const normalizedQuery = normalizeSearch(rawSearch);
-    const results = (rawSearch ? supportedPairCatalog.assets
+    const results = supportedPairCatalog.assets
       .filter(([ticker, name, mintAddress]) =>
+        !rawSearch ||
         [ticker, name].some(value => normalizeSearch(value).includes(normalizedQuery)) ||
         mintAddress.includes(rawSearch),
-      ) : [])
-      .slice(0, MAX_RESULTS)
+      )
       .map(([ticker, name, mintAddress, category]) => ({
         ticker,
         name,
         mintAddress,
         category,
+        assetGroup: xstocksMints.has(mintAddress)
+          ? "xstocks" as const
+          : backpackMints.has(mintAddress)
+            ? "backpack" as const
+            : "crypto" as const,
         iconUrl: null,
         catalogStatus: "listed" as const,
         compatibilityStatus: "not-checked" as const,
