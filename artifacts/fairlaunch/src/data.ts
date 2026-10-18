@@ -1,4 +1,5 @@
 import type { PairType } from './lib/launch-validation';
+import type { SelectedPairToken } from './lib/token-catalog';
 
 export type Participant = {
   walletAddress: string;
@@ -16,6 +17,7 @@ export type Launch = {
   description: string;
   pairType: PairType;
   pairMintAddress: string;
+  pairToken?: SelectedPairToken;
   holderRewardBps: number;
   committedAmountUsd: number;
   participantCount: number;

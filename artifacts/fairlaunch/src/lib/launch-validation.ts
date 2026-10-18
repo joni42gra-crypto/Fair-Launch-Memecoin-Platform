@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SelectedPairToken } from './token-catalog';
 
 export const PAIR_TYPE_VALUES = [
   'supported-memecoin',
@@ -26,6 +27,7 @@ export const DEFAULT_PAIR_MINT_ADDRESS =
 export const DEFAULT_HOLDER_REWARD_BPS = 50;
 export const MIN_HOLDER_REWARD_BPS = 1;
 export const MAX_HOLDER_REWARD_BPS = 300;
+export const MAX_PROPOSAL_IMAGE_BYTES = 2 * 1024 * 1024;
 
 const BASE58_ALPHABET =
   '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -78,6 +80,17 @@ function isOptionalHttpUrl(value: string): boolean {
   }
 }
 
+export function isValidProposalImageDataUrl(value: string): boolean {
+  if (!value) return true;
+  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(value);
+  if (!match) return false;
+
+  const base64 = match[2];
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  const byteLength = Math.floor((base64.length * 3) / 4) - padding;
+  return byteLength <= MAX_PROPOSAL_IMAGE_BYTES;
+}
+
 export const launchProposalSchema = z.object({
   name: z.string().trim().min(2, 'Use at least 2 characters.').max(48),
   ticker: z
@@ -102,7 +115,10 @@ export const launchProposalSchema = z.object({
   imageUrl: z
     .string()
     .trim()
-    .refine(isOptionalHttpUrl, 'Use a valid http:// or https:// image URL.'),
+    .refine(
+      isValidProposalImageDataUrl,
+      'Upload a PNG, JPG, JPEG, or WebP image up to 2 MB.',
+    ),
   sourceUrl: z
     .string()
     .trim()
@@ -118,4 +134,4 @@ export type LaunchProposalFormInput = z.input<typeof launchProposalSchema>;
 export type LaunchProposalInput = Omit<
   z.output<typeof launchProposalSchema>,
   'pairType'
-> & { pairType: PairType };
+> & { pairType: PairType; pairToken: SelectedPairToken };
