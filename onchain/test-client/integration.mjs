@@ -321,24 +321,6 @@ function finalizeFailureInstruction(caller, campaign) {
   ]);
 }
 
-function claimRefundInstruction(wallet, campaign, participantWallet) {
-  return instruction("claim_refund", [
-    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
-    { pubkey: campaign, isSigner: false, isWritable: true },
-    {
-      pubkey: participantAddress(campaign, participantWallet),
-      isSigner: false,
-      isWritable: true,
-    },
-    { pubkey: vaultAddress(campaign), isSigner: false, isWritable: true },
-    {
-      pubkey: SystemProgram.programId,
-      isSigner: false,
-      isWritable: false,
-    },
-  ]);
-}
-
 async function currentContribution(wallet, campaign, fixtureName = "valid", extra = {}) {
   const now = await clockUnixTimestamp();
   return sendInstruction(
@@ -403,38 +385,13 @@ async function rejectOracleCases(wallet, campaign) {
   console.log("PASS invalid feed, age, verification, price, confidence, quote and owner checks");
 }
 
-async function warpToDeadline(deadline) {
-  let currentSlot = await connection.getSlot("confirmed");
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "warpSlot",
-        params: [currentSlot + 10_000],
-      }),
-    });
-    const payload = await response.json();
-    if (payload.error) {
-      throw new Error(`Local validator warpSlot failed: ${JSON.stringify(payload.error)}`);
-    }
-    currentSlot = await connection.getSlot("confirmed");
-    if ((await clockUnixTimestamp()) >= deadline) return currentSlot;
-  }
-  throw new Error("Local validator could not warp Clock past the campaign deadline.");
-}
-
 async function run() {
   const creator = Keypair.generate();
-  const participants = Array.from({ length: 106 }, () => Keypair.generate());
+  const participants = Array.from({ length: 104 }, () => Keypair.generate());
   const [repeatWallet, secondWallet] = participants;
   const successWallets = participants.slice(2, 102);
   const participant101 = participants[102];
   const invalidPriceWallet = participants[103];
-  const refundWallet = participants[104];
-  const attackerWallet = participants[105];
   assert.equal(
     new Set(successWallets.map((wallet) => wallet.publicKey.toBase58())).size,
     100,
@@ -585,124 +542,7 @@ async function run() {
     ).participantCount,
     0,
   );
-
-  const refundCampaign = await startCampaign(creator, 4n);
-  const refundSignature = await currentContribution(
-    refundWallet,
-    refundCampaign.campaign,
-  );
-  const refundReceipt = participantAddress(
-    refundCampaign.campaign,
-    refundWallet.publicKey,
-  );
-  const refundReceiptInfo = await connection.getAccountInfo(
-    refundReceipt,
-    "confirmed",
-  );
-  const refundAmount = parseParticipant(refundReceiptInfo).amountLamports;
-  const refundDeadline = parseCampaign(
-    await connection.getAccountInfo(refundCampaign.campaign, "confirmed"),
-  ).endsAt;
-  assert.equal(
-    refundDeadline -
-      parseCampaign(
-        await connection.getAccountInfo(refundCampaign.campaign, "confirmed"),
-      ).startedAt,
-    3_600n,
-  );
-  await expectRejected("finalize before deadline", () =>
-    sendInstruction(
-      creator,
-      finalizeFailureInstruction(creator, refundCampaign.campaign),
-    ),
-  );
-  await expectRejected("claim refund before failure is finalized", () =>
-    sendInstruction(
-      refundWallet,
-      claimRefundInstruction(
-        refundWallet,
-        refundCampaign.campaign,
-        refundWallet.publicKey,
-      ),
-    ),
-  );
-
-  await warpToDeadline(refundDeadline);
-  assert.ok((await clockUnixTimestamp()) >= refundDeadline);
-  await expectRejected("contribution after the campaign deadline", () =>
-    currentContribution(participant101, refundCampaign.campaign),
-  );
-  const finalizeSignature = await sendInstruction(
-    creator,
-    finalizeFailureInstruction(creator, refundCampaign.campaign),
-  );
-  assert.ok(finalizeSignature);
-  assert.equal(
-    parseCampaign(
-      await connection.getAccountInfo(refundCampaign.campaign, "confirmed"),
-    ).status,
-    2,
-  );
-
-  const vault = vaultAddress(refundCampaign.campaign);
-  const vaultBeforeRefund = BigInt(await connection.getBalance(vault, "confirmed"));
-  const refundWalletBefore = BigInt(
-    await connection.getBalance(refundWallet.publicKey, "confirmed"),
-  );
-  const receiptRentRefunded = BigInt(refundReceiptInfo.lamports);
-  await expectRejected("another wallet attempts to claim the participant's refund", () =>
-    sendInstruction(
-      attackerWallet,
-      claimRefundInstruction(
-        attackerWallet,
-        refundCampaign.campaign,
-        refundWallet.publicKey,
-      ),
-    ),
-  );
-  assert.equal(
-    BigInt(await connection.getBalance(vault, "confirmed")),
-    vaultBeforeRefund,
-  );
-
-  const claimSignature = await sendInstruction(
-    refundWallet,
-    claimRefundInstruction(
-      refundWallet,
-      refundCampaign.campaign,
-      refundWallet.publicKey,
-    ),
-  );
-  const refundFee = await transactionFee(claimSignature);
-  assert.equal(await connection.getAccountInfo(refundReceipt, "confirmed"), null);
-  assert.equal(
-    BigInt(await connection.getBalance(vault, "confirmed")),
-    vaultBeforeRefund - refundAmount,
-  );
-  assert.equal(
-    BigInt(await connection.getBalance(refundWallet.publicKey, "confirmed")) -
-      refundWalletBefore,
-    refundAmount + receiptRentRefunded - refundFee,
-    "refund must return the exact saved deposit and receipt rent, less the transaction fee",
-  );
-  await expectRejected("same refund claimed twice", () =>
-    sendInstruction(
-      refundWallet,
-      claimRefundInstruction(
-        refundWallet,
-        refundCampaign.campaign,
-        refundWallet.publicKey,
-      ),
-    ),
-  );
-  const failedState = parseCampaign(
-    await connection.getAccountInfo(refundCampaign.campaign, "confirmed"),
-  );
-  assert.equal(failedState.refundedCount, 1);
-  assert.equal(failedState.totalLamports, 0n);
-  assert.equal(failedState.participantCount, 1);
-  assert.ok(refundSignature);
-  console.log("PASS deadline, failed campaign, recipient binding, exact refund and replay prevention");
+  console.log("PASS validator scenarios for unique deposits, the 100-wallet cap, and oracle checks");
 }
 
 await run();

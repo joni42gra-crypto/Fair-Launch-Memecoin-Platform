@@ -20,3 +20,9 @@ Agave's SBF builder may invoke Cargo through rustup to read Cargo metadata befor
 **Why:** GitHub Actions failed when rustup had no default Cargo toolchain, before the pinned SBF compiler could build the program.
 
 **How to apply:** in the builder's exact child environment, verify `rustc --version`, `cargo --version`, and `rustup show active-toolchain`, then run locked Cargo metadata before invoking the pinned SBF builder.
+
+Agave 3.1.10's local validator does not expose a `warpSlot` RPC method. Its `--warp-slot` option and `ProgramTestContext::warp_to_slot` advance slots, but `Bank::warp_from_parent` preserves the parent's Unix timestamp. For deadline tests, use `ProgramTestContext::set_sysvar(&Clock)` against the built SBF program; use slot warping only when a fresh blockhash is needed.
+
+**Why:** slot advancement alone does not make a time-based on-chain deadline pass.
+
+**How to apply:** keep tests deterministic by setting `Clock.unix_timestamp` directly in Agave's in-process ProgramTest bank rather than waiting for wall-clock time or calling a validator RPC method.

@@ -226,6 +226,23 @@ try {
     cwd: here,
     env: process.env,
   });
+  console.log("Running deterministic Clock/deadline tests against the built SBF program...");
+  run(
+    "cargo",
+    [
+      "test",
+      "--manifest-path",
+      path.join(onchainDir, "programs/launchpad-escrow/Cargo.toml"),
+      "--locked",
+    ],
+    {
+      cwd: onchainDir,
+      env: {
+        ...rustupEnv,
+        BPF_OUT_DIR: path.join(onchainDir, "target/deploy"),
+      },
+    },
+  );
   await rm(ledgerDir, { recursive: true, force: true });
 
   const validatorArgs = [
