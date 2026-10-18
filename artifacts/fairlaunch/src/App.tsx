@@ -28,10 +28,10 @@ import './proposal.css';
 import './light-routes.css';
 import { LaunchpadPage } from './components/proposal/LaunchpadPage';
 import { SiteChrome } from './components/SiteChrome';
+import { usePhantomWallet } from './hooks/usePhantomWallet';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
 const ACTIVITY_KEY = 'fairlaunch.demo.activity.v1';
-const WALLET_KEY = 'fairlaunch.demo.wallet.v1';
 
 function readStorage<T>(key: string, fallback: T): T {
   try {
@@ -541,7 +541,7 @@ function ActivityPage({ activities, launches, wallet }: { activities: Activity[]
     <div className="page-top"><span className="section-kicker">Local browser record / 04</span><h1 className="page-title">Demo activity.</h1><p className="page-intro">A transparent record of simulated $10 commitments. These are not transfers, receipts, or on-chain transactions.</p></div>
     <div className="refund-banner" style={{ margin: '0 0 24px' }} data-testid="notice-activity-demo"><div className="refund-icon"><ShieldCheck size={16} /></div><div><h3>All rows are demo data</h3><p>Activity is stored locally in this browser. No funds have been collected. A “confirmed” label means only that the prototype recorded a click.</p></div></div>
     {sorted.length ? <div className="activity-table" data-testid="table-activity">
-      <div className="activity-head"><span>Community idea</span><span>Demo wallet</span><span>Amount</span><span>Status · date</span></div>
+      <div className="activity-head"><span>Community idea</span><span>Wallet</span><span>Amount</span><span>Status · date</span></div>
       {sorted.map(activity => {
         const live = launches.find(launch => launch.id === activity.launchId);
         return <div className="activity-row" key={activity.id} data-testid={`row-activity-${activity.id}`}>
@@ -551,24 +551,37 @@ function ActivityPage({ activities, launches, wallet }: { activities: Activity[]
           <div><span className={`activity-status ${activity.status === 'pending' ? 'pending' : ''}`}>{activity.status.toUpperCase()}</span><span className="activity-demo">DEMO</span><small style={{ display: 'block', color: '#78818e', marginTop: 5 }}>{formatDate(activity.createdAt)}</small></div>
         </div>;
       })}
-    </div> : <div className="empty-state" data-testid="empty-activity"><div className="empty-mark"><Wallet size={17} /></div><h3>No demo activity yet</h3><p>Connect a demo wallet and record a fixed $10 commitment to see it here.</p><Link href="/" className="button button-primary" data-testid="button-activity-explore">Explore launches</Link></div>}
-    {wallet && <p className="field-hint" style={{ marginTop: 13 }}>Connected demo wallet: <span className="mono">{shortAddress(wallet)}</span> · {own.length} local record{own.length === 1 ? '' : 's'} linked to this wallet.</p>}
+    </div> : <div className="empty-state" data-testid="empty-activity"><div className="empty-mark"><Wallet size={17} /></div><h3>No demo activity yet</h3><p>Connect Phantom and record a fixed $10 demo commitment to see it here.</p><Link href="/" className="button button-primary" data-testid="button-activity-explore">Explore launches</Link></div>}
+    {wallet && <p className="field-hint" style={{ marginTop: 13 }}>Connected Phantom wallet: <span className="mono">{shortAddress(wallet)}</span> · {own.length} local demo record{own.length === 1 ? '' : 's'} linked to this wallet.</p>}
     <Footer />
   </main>;
 }
 
 type ModalKind = 'connect' | 'commit' | null;
-function Dialog({ kind, launch, wallet, onClose, onConnect, onConfirm, busy }: {
-  kind: ModalKind; launch: Launch | null; wallet: string | null; onClose: () => void; onConnect: () => void; onConfirm: () => void; busy: boolean;
+function Dialog({ kind, launch, wallet, walletError, walletInstalled, walletConnecting, walletDisconnecting, onClose, onConnect, onDisconnect, onConfirm, busy }: {
+  kind: ModalKind; launch: Launch | null; wallet: string | null; walletError: string; walletInstalled: boolean; walletConnecting: boolean; walletDisconnecting: boolean;
+  onClose: () => void; onConnect: () => void; onDisconnect: () => void; onConfirm: () => void; busy: boolean;
 }) {
   if (!kind) return null;
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title" data-testid={`modal-${kind}`}>
-      <div className="modal-top"><div><span className="section-kicker">{kind === 'connect' ? 'Local-only identity' : 'Review before recording'}</span><h2 id="dialog-title">{kind === 'connect' ? (wallet ? 'Demo wallet connected' : 'Connect demo wallet') : 'Commit exactly $10?'}</h2></div><button className="modal-close" onClick={onClose} aria-label="Close dialog" data-testid="button-close-modal"><X size={18} /></button></div>
+      <div className="modal-top"><div><span className="section-kicker">{kind === 'connect' ? 'Solana wallet' : 'Review before recording'}</span><h2 id="dialog-title">{kind === 'connect' ? (wallet ? 'Phantom connected' : 'Connect Phantom') : 'Commit exactly $10?'}</h2></div><button className="modal-close" onClick={onClose} aria-label="Close dialog" data-testid="button-close-modal"><X size={18} /></button></div>
       {kind === 'connect' ? <>
-        <p className="modal-copy">This is a local prototype identity used only to enforce one demo commitment per launch. No wallet provider is contacted, and no private keys are requested or accepted.</p>
-        {wallet ? <div className="connected-box"><div className="connected-symbol"><Check size={14} /></div><div><span className="stat-label">DEMO ADDRESS</span><span className="mono">{shortAddress(wallet)}</span></div></div> : <div className="modal-notice">Demo mode creates a non-custodial-looking placeholder address in this browser. It is not a real wallet and cannot sign or send anything.</div>}
-        <div className="modal-actions"><button className="button button-quiet" onClick={onClose} data-testid="button-cancel-connect">Close</button>{!wallet && <button className="button button-primary" onClick={onConnect} data-testid="button-enable-demo-wallet"><Wallet size={14} /> Use demo wallet</button>}</div>
+        <p className="modal-copy">Connect Phantom to share your public Solana address. This site never asks for your seed phrase, private key, or password. It will not request a signature or send a transaction.</p>
+        {wallet ? <div className="connected-box"><div className="connected-symbol"><Check size={14} /></div><div><span className="stat-label">PHANTOM WALLET · CONNECTED</span><span className="mono wallet-full-address">{wallet}</span></div></div> : walletInstalled
+          ? <div className="modal-notice">Phantom will ask you to approve sharing your public address. No other wallet permissions are requested.</div>
+          : <div className="modal-notice">Phantom was not detected. Install the official wallet, then reload this page.
+            <span className="wallet-iframe-note">If Phantom is already installed but this app is inside an embedded preview, <a href={window.location.href} target="_blank" rel="noreferrer">open the app in a new tab</a> and reload.</span>
+          </div>}
+        {walletError && <p className="wallet-error" role="alert" data-testid="wallet-error">{walletError}</p>}
+        <div className="modal-actions">
+          <button className="button button-quiet" onClick={onClose} data-testid="button-cancel-connect">Close</button>
+          {wallet
+            ? <button className="button button-primary" onClick={onDisconnect} disabled={walletDisconnecting} data-testid="button-disconnect-wallet">{walletDisconnecting ? 'Disconnecting…' : 'Disconnect wallet'}</button>
+            : walletInstalled
+              ? <button className="button button-primary" onClick={onConnect} disabled={walletConnecting} data-testid="button-connect-phantom"><Wallet size={14} />{walletConnecting ? 'Connecting…' : 'Connect Phantom'}</button>
+              : <a className="button button-primary phantom-download" href="https://phantom.com/download" target="_blank" rel="noreferrer" data-testid="link-install-phantom">Get Phantom <ExternalLink size={13} /></a>}
+        </div>
       </> : <>
         <p className="modal-copy">You are about to add one simulated <strong>$10.00</strong> commitment to <strong>{launch?.name}</strong>. This is a local demo record only.</p>
         <div className="amount-box"><span className="amount-caption">Fixed contribution · one per wallet</span><div className="amount-number">$10.00</div></div>
@@ -587,7 +600,8 @@ function AppContent() {
   const [location] = useLocation();
   const [launches, setLaunches] = usePersistedState<Launch[]>(LAUNCH_KEY, SEED_LAUNCHES, normalizeLaunches);
   const [activities, setActivities] = usePersistedState<Activity[]>(ACTIVITY_KEY, SEED_ACTIVITIES);
-  const [wallet, setWallet] = usePersistedState<string | null>(WALLET_KEY, null);
+  const phantom = usePhantomWallet();
+  const { address: wallet } = phantom;
   const [modal, setModal] = useState<ModalKind>(null);
   const [selectedLaunch, setSelectedLaunch] = useState<Launch | null>(null);
   const [toast, setToast] = useState('');
@@ -598,13 +612,17 @@ function AppContent() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const connect = () => {
-    if (!wallet) {
-      const candidate = `Demo-${Math.random().toString(36).slice(2, 7)}-${Math.random().toString(36).slice(2, 6)}`;
-      setWallet(candidate);
-      setToast('Demo wallet connected locally. No wallet service was contacted.');
+  const connect = async () => {
+    if (await phantom.connect()) {
+      setModal(null);
+      setToast('Phantom wallet connected. No transaction was requested.');
     }
-    setModal(null);
+  };
+  const disconnect = async () => {
+    if (await phantom.disconnect()) {
+      setModal(null);
+      setToast('Phantom wallet disconnected.');
+    }
   };
   const addLaunch = (proposal: LaunchProposalInput): boolean => {
     const id = `${proposal.ticker.toLowerCase()}-${Date.now().toString(36)}`;
@@ -626,7 +644,7 @@ function AppContent() {
   const confirmCommit = () => {
     if (!wallet || !selectedLaunch || busy) return;
     if (activities.some(activity => activity.launchId === selectedLaunch.id && activity.walletAddress === wallet)) {
-      setModal(null); setToast('This demo wallet already has a commitment on this launch.'); return;
+      setModal(null); setToast('This Phantom wallet already has a demo commitment on this launch.'); return;
     }
     setBusy(true);
     window.setTimeout(() => {
@@ -650,14 +668,14 @@ function AppContent() {
 
   const pages = <Switch>
       <Route path="/"><HomePage launches={launches} /></Route>
-      <Route path="/propose"><LaunchpadPage onAdd={addLaunch} wallet={wallet ?? ''} onConnect={() => setModal('connect')} /></Route>
+      <Route path="/propose"><LaunchpadPage onAdd={addLaunch} wallet={wallet ?? ''} onConnect={() => { phantom.clearError(); setModal('connect'); }} /></Route>
       <Route path="/activity"><ActivityPage activities={activities} launches={launches} wallet={wallet} /></Route>
       <Route path="/launch/:id">{params => <LaunchPage id={params.id} launches={launches} activities={activities} wallet={wallet} onConnect={() => setModal('connect')} onCommit={startCommit} />}</Route>
       <Route><NotFound /></Route>
     </Switch>;
   return <div className={`app-shell ${location !== '/propose' ? 'light-migration site-with-sidebar' : ''}`}>
-    {location === '/propose' ? pages : <SiteChrome wallet={wallet} onConnect={() => setModal('connect')}>{pages}</SiteChrome>}
-    <Dialog kind={modal} launch={selectedLaunch} wallet={wallet} busy={busy} onClose={() => { if (!busy) setModal(null); }} onConnect={connect} onConfirm={confirmCommit} />
+    {location === '/propose' ? pages : <SiteChrome wallet={wallet} onConnect={() => { phantom.clearError(); setModal('connect'); }}>{pages}</SiteChrome>}
+    <Dialog kind={modal} launch={selectedLaunch} wallet={wallet} walletError={phantom.error} walletInstalled={phantom.installed} walletConnecting={phantom.connecting} walletDisconnecting={phantom.disconnecting} busy={busy} onClose={() => { phantom.clearError(); if (!busy) setModal(null); }} onConnect={() => { void connect(); }} onDisconnect={() => { void disconnect(); }} onConfirm={confirmCommit} />
     {toast && <div role="status" className="toast" data-testid="status-toast">{toast}</div>}
   </div>;
 }

@@ -22,3 +22,9 @@ The rest of the site must match Propose's overall concept, including tab placeme
 **Why:** the user clarified «расположение вкладок тоже должно быть как в propose вся общая концепция» after a color-only migration left horizontal navigation.
 
 **How to apply:** use Propose as the reference for the desktop sidebar, top bar and responsive navigation as well as visual styling.
+
+Phantom connection is read-only: request the public address only. Do not request signatures, send transactions, or implement Pump.fun account sign-in without an officially supported third-party mechanism.
+
+**Why:** the user explicitly limited this integration to wallet connection and prohibited transactions, secrets, and unverified Pump.fun authentication.
+
+**How to apply:** keep Phantom integration to connect/disconnect and account-change events; treat Pump.fun's first-party login as separate from third-party authorization.

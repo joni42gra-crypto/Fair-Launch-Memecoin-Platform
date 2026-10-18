@@ -10,6 +10,7 @@ import {
   type LaunchProposalFormInput, type LaunchProposalInput, type PairType,
 } from '../../lib/launch-validation';
 import type { SelectedPairToken, TokenCatalogEntry } from '../../lib/token-catalog';
+import { shortAddress } from '../../data';
 import './launchpad.css';
 
 type Group = 'all' | 'xstocks' | 'backpack' | 'crypto';
@@ -133,7 +134,7 @@ export function LaunchpadPage({ onAdd, wallet, onConnect }: {
       <div className="lp-sidebar-note"><ShieldCheck size={17} /><span><strong>Browser-only proposal</strong><small>No blockchain transactions</small></span></div>
     </aside>
     <div className="lp-workspace">
-      <header className="lp-topbar"><span>Launcher <i>/</i> <strong>Trading pair</strong></span><div><small className="lp-mode">● DEMO MODE</small><button type="button" onClick={onConnect}><Wallet size={14} />{wallet ? 'Demo wallet' : 'Connect'}</button></div></header>
+      <header className="lp-topbar"><span>Launcher <i>/</i> <strong>Trading pair</strong></span><div><small className="lp-mode" aria-live="polite">● {wallet ? 'WALLET CONNECTED' : 'WALLET DISCONNECTED'}</small><button type="button" onClick={onConnect} aria-label={wallet ? `Manage connected wallet ${wallet}` : 'Connect Phantom wallet'}><Wallet size={14} />{wallet ? shortAddress(wallet) : 'Connect Wallet'}</button></div></header>
       <main className="lp-page">
         {saved ? <section className="lp-saved" data-testid="success-proposal"><CheckCircle2 size={32} /><small>PROPOSAL SAVED / DEMO</small><h1>Your idea has a demo page</h1><p>{saved.name} is saved in this browser only. No token was created, no funds were collected, and no transaction was sent.</p><p>Pair: {selectedName} · Holder rewards: {(saved.holderRewardBps / 100).toFixed(2)}% · Compatibility: Unverified</p><Link href="/" className="lp-primary">Explore launches</Link><button type="button" onClick={reset}>Back to Launcher</button></section> : <>
         <div className="lp-heading"><small>STEP 1 <i>/</i> 3</small><h1>Choose what it pairs with</h1><p>Your token trades against this asset, and rewards are distributed to eligible holders.</p><div className="lp-progress" aria-label="Proposal settings"><span /><span /><span /></div></div>

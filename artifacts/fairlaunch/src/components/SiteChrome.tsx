@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { Activity, Compass, Info, Search, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
+import { shortAddress } from '../data';
 
 /** The approved Propose navigation, applied to the other existing routes. */
 export function SiteChrome({ children, wallet, onConnect }: {
@@ -31,7 +32,7 @@ export function SiteChrome({ children, wallet, onConnect }: {
     <div className="lp-workspace">
       <header className="lp-topbar">
         <span>{section}<i>/</i><strong>{page}</strong></span>
-        <div><small className="lp-mode">● DEMO MODE</small><button type="button" onClick={onConnect} aria-label={wallet ? 'Manage demo wallet' : 'Connect demo wallet'} data-testid="button-connect-wallet"><Wallet size={14} />{wallet ? 'Demo wallet' : 'Connect'}</button></div>
+        <div><small className="lp-mode" aria-live="polite">● {wallet ? 'WALLET CONNECTED' : 'WALLET DISCONNECTED'}</small><button type="button" onClick={onConnect} aria-label={wallet ? `Manage Phantom wallet ${wallet}` : 'Connect Phantom wallet'} data-testid="button-connect-wallet"><Wallet size={14} />{wallet ? shortAddress(wallet) : 'Connect Wallet'}</button></div>
       </header>
       {children}
     </div>
