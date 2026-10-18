@@ -28,3 +28,11 @@ Phantom connection is read-only: request the public address only. Do not request
 **Why:** the user explicitly limited this integration to wallet connection and prohibited transactions, secrets, and unverified Pump.fun authentication.
 
 **How to apply:** keep Phantom integration to connect/disconnect and account-change events; treat Pump.fun's first-party login as separate from third-party authorization.
+
+## Devnet escrow settlement boundary
+
+Successful campaign contributions remain in the program vault until a separate settlement policy is explicitly approved. Do not add an admin withdrawal or Pump.fun purchase path by assumption; returning participant-account rent is separate from withdrawing campaign funds.
+
+**Why:** no successful-campaign beneficiary or settlement rule was specified, so the safest prototype does not introduce a custody exit.
+
+**How to apply:** keep failed-campaign refunds limited to each recorded participant, and retain the no-withdrawal rule for successful campaigns until the user approves a reviewed settlement design.

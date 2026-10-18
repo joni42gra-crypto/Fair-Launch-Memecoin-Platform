@@ -27,6 +27,7 @@ import { type PairCompatibilityStatus } from './lib/pair-compatibility';
 import './proposal.css';
 import './light-routes.css';
 import { LaunchpadPage } from './components/proposal/LaunchpadPage';
+import { DevnetQuotePreview } from './components/DevnetQuotePreview';
 import { SiteChrome } from './components/SiteChrome';
 import { usePhantomWallet } from './hooks/usePhantomWallet';
 
@@ -238,6 +239,7 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
       </section>
       <aside className="panel commit-panel">
         <span className="section-kicker">Equal by design</span><h2 style={{ marginTop: 8 }}>One spot. One amount.</h2>
+        <DevnetQuotePreview />
         <div className="amount-box"><span className="amount-caption">Fixed demo commitment</span><div className="amount-number">$10<span style={{ color: '#828b96', fontSize: 15 }}>.00</span></div></div>
         <p>Exactly $10. No slider, no higher tier. This click simulates a commitment in your browser only; no funds are collected.</p>
         {launch.status === 'completed'

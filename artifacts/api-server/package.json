@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:sol-quote": "node --experimental-strip-types --test scripts/test-sol-quote.mjs",
     "update:supported-pairs": "node scripts/update-supported-pairs.mjs",
     "check:supported-pairs-source": "node scripts/update-supported-pairs.mjs --check"
   },

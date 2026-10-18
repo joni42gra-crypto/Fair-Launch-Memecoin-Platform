@@ -7,6 +7,9 @@
  */
 
 export * from './apiError';
+export * from './devnetSolQuote';
+export * from './devnetSolQuoteNetwork';
+export * from './devnetSolQuoteSource';
 export * from './healthStatus';
 export * from './pairAssetCategory';
 export * from './pairAssetGroup';

@@ -17,6 +17,7 @@ import type {
 
 import type {
   ApiError,
+  DevnetSolQuote,
   HealthStatus,
   SearchSupportedPairAssetsParams,
   SupportedPairAssetSearchResponse
@@ -200,6 +201,84 @@ export function useSearchSupportedPairAssets<TData = Awaited<ReturnType<typeof s
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchSupportedPairAssetsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetDevnetSolQuoteUrl = () => {
+
+
+
+
+  return `/api/devnet/sol-quote`
+}
+
+/**
+ * Returns a short-lived integer-lamports quote and Pyth update bytes. This endpoint never creates or sends a transaction; the on-chain program independently verifies the Pyth update.
+ * @summary Get a fresh Pyth SOL/USD quote for a $10 Devnet contribution
+ */
+export const getDevnetSolQuote = async ( options?: Parameters<typeof customFetch>[1]): Promise<DevnetSolQuote> => {
+
+  return customFetch<DevnetSolQuote>(getGetDevnetSolQuoteUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDevnetSolQuoteQueryKey = () => {
+    return [
+    `/api/devnet/sol-quote`
+    ] as const;
+    }
+
+
+export const getGetDevnetSolQuoteQueryOptions = <TData = Awaited<ReturnType<typeof getDevnetSolQuote>>, TError = ErrorType<ApiError>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDevnetSolQuote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDevnetSolQuoteQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDevnetSolQuote>>> = ({ signal }) => getDevnetSolQuote({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDevnetSolQuote>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDevnetSolQuoteQueryResult = NonNullable<Awaited<ReturnType<typeof getDevnetSolQuote>>>
+export type GetDevnetSolQuoteQueryError = ErrorType<ApiError>
+
+
+/**
+ * @summary Get a fresh Pyth SOL/USD quote for a $10 Devnet contribution
+ */
+
+export function useGetDevnetSolQuote<TData = Awaited<ReturnType<typeof getDevnetSolQuote>>, TError = ErrorType<ApiError>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDevnetSolQuote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDevnetSolQuoteQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

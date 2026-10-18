@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: tokens
     description: Pump.fun Supported Pair Assets catalog
+  - name: devnet
+    description: Read-only Devnet contribution preparation
 paths:
   /healthz:
     get:
@@ -56,6 +58,31 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "500":
           description: The local supported-pair catalog is unavailable or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /devnet/sol-quote:
+    get:
+      operationId: getDevnetSolQuote
+      tags: [devnet]
+      summary: Get a fresh Pyth SOL/USD quote for a $10 Devnet contribution
+      description: Returns a short-lived integer-lamports quote and Pyth update bytes. This endpoint never creates or sends a transaction; the on-chain program independently verifies the Pyth update.
+      responses:
+        "200":
+          description: Fresh SOL/USD quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevnetSolQuote"
+        "502":
+          description: Pyth did not return a valid fresh quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Pyth quote service is not configured
           content:
             application/json:
               schema:
@@ -154,4 +181,53 @@ components:
           type: string
       required:
         - error
+    DevnetSolQuote:
+      type: object
+      properties:
+        network:
+          type: string
+          enum: [devnet]
+        source:
+          type: string
+          enum: [Pyth Core]
+        feedId:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        usdCents:
+          type: integer
+          const: 1000
+        price:
+          type: string
+          pattern: "^[1-9][0-9]*$"
+          description: Pyth integer price; interpret as price × 10^exponent USD.
+        confidence:
+          type: string
+          pattern: "^[0-9]+$"
+        exponent:
+          type: integer
+        publishTime:
+          type: integer
+        quotedAt:
+          type: integer
+        expiresAt:
+          type: integer
+        requiredLamports:
+          type: string
+          pattern: "^[1-9][0-9]*$"
+        pythUpdateDataBase64:
+          type: string
+          description: Signed Pyth price-update payload for a future atomic Devnet update-and-join transaction.
+      required:
+        - network
+        - source
+        - feedId
+        - usdCents
+        - price
+        - confidence
+        - exponent
+        - publishTime
+        - quotedAt
+        - expiresAt
+        - requiredLamports
+        - pythUpdateDataBase64
 

@@ -78,6 +78,43 @@ export interface ApiError {
   error: string;
 }
 
+export type DevnetSolQuoteNetwork = typeof DevnetSolQuoteNetwork[keyof typeof DevnetSolQuoteNetwork];
+
+
+export const DevnetSolQuoteNetwork = {
+  devnet: 'devnet',
+} as const;
+
+export type DevnetSolQuoteSource = typeof DevnetSolQuoteSource[keyof typeof DevnetSolQuoteSource];
+
+
+export const DevnetSolQuoteSource = {
+  Pyth_Core: 'Pyth Core',
+} as const;
+
+export interface DevnetSolQuote {
+  network: DevnetSolQuoteNetwork;
+  source: DevnetSolQuoteSource;
+  /** @pattern ^[a-f0-9]{64}$ */
+  feedId: string;
+  usdCents: 1000;
+  /**
+     * Pyth integer price; interpret as price × 10^exponent USD.
+     * @pattern ^[1-9][0-9]*$
+     */
+  price: string;
+  /** @pattern ^[0-9]+$ */
+  confidence: string;
+  exponent: number;
+  publishTime: number;
+  quotedAt: number;
+  expiresAt: number;
+  /** @pattern ^[1-9][0-9]*$ */
+  requiredLamports: string;
+  /** Signed Pyth price-update payload for a future atomic Devnet update-and-join transaction. */
+  pythUpdateDataBase64: string;
+}
+
 export type SearchSupportedPairAssetsParams = {
 /**
  * Supported pair asset name, ticker, or mint address.

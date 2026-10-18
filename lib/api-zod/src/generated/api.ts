@@ -56,3 +56,29 @@ export const SearchSupportedPairAssetsResponse = zod.object({
 })
 
 
+/**
+ * Returns a short-lived integer-lamports quote and Pyth update bytes. This endpoint never creates or sends a transaction; the on-chain program independently verifies the Pyth update.
+ * @summary Get a fresh Pyth SOL/USD quote for a $10 Devnet contribution
+ */
+export const getDevnetSolQuoteResponseFeedIdRegExp = new RegExp('^[a-f0-9]{64}$');
+export const getDevnetSolQuoteResponsePriceRegExp = new RegExp('^[1-9][0-9]*$');
+export const getDevnetSolQuoteResponseConfidenceRegExp = new RegExp('^[0-9]+$');
+export const getDevnetSolQuoteResponseRequiredLamportsRegExp = new RegExp('^[1-9][0-9]*$');
+
+
+export const GetDevnetSolQuoteResponse = zod.object({
+  "network": zod.enum(['devnet']),
+  "source": zod.enum(['Pyth Core']),
+  "feedId": zod.string().regex(getDevnetSolQuoteResponseFeedIdRegExp),
+  "usdCents": zod.literal(1000),
+  "price": zod.string().regex(getDevnetSolQuoteResponsePriceRegExp).describe('Pyth integer price; interpret as price × 10^exponent USD.'),
+  "confidence": zod.string().regex(getDevnetSolQuoteResponseConfidenceRegExp),
+  "exponent": zod.number().int(),
+  "publishTime": zod.number().int(),
+  "quotedAt": zod.number().int(),
+  "expiresAt": zod.number().int(),
+  "requiredLamports": zod.string().regex(getDevnetSolQuoteResponseRequiredLamportsRegExp),
+  "pythUpdateDataBase64": zod.string().describe('Signed Pyth price-update payload for a future atomic Devnet update-and-join transaction.')
+})
+
+

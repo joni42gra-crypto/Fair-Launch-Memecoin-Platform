@@ -188,6 +188,42 @@
 .light-migration .amount-caption { color: #85877f; font: 8px 'DM Mono', monospace; }
 .light-migration .amount-number { margin-top: 5px; color: #34372f; font-size: 28px; }
 .light-migration .commit-panel p { color: #777970; font-size: 10px; line-height: 1.7; }
+.light-migration .devnet-quote-card {
+  margin: 15px 0;
+  padding: 13px;
+  border: 1px solid #e6e4dd;
+  border-radius: 7px;
+  background: #fbfaf7;
+}
+.light-migration .devnet-quote-heading,
+.light-migration .devnet-quote-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.light-migration .devnet-quote-tag {
+  color: #686b62;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+.light-migration .devnet-quote-copy,
+.light-migration .devnet-quote-error,
+.light-migration .devnet-quote-disclaimer {
+  margin: 8px 0;
+  color: #777970;
+  font-size: 9px;
+  line-height: 1.55;
+}
+.light-migration .devnet-quote-error { color: #985640; }
+.light-migration .devnet-quote-result { margin: 12px 0; align-items: flex-end; }
+.light-migration .devnet-quote-result > div { display: grid; gap: 4px; }
+.light-migration .devnet-quote-result strong { color: #24251f; font-size: 19px; }
+.light-migration .devnet-quote-expiry { color: #536b39; font-size: 9px; white-space: nowrap; }
+.light-migration .devnet-quote-expiry.is-expired { color: #985640; }
+.light-migration .devnet-quote-button { min-height: 36px; font-size: 10px; }
+.light-migration .devnet-quote-disclaimer { margin-bottom: 0; }
 .light-migration .activity-table { border: 1px solid var(--lm-line); border-radius: 7px; background: var(--lm-card); }
 .light-migration .activity-head,
 .light-migration .activity-row { gap: 13px; padding: 13px 16px; }

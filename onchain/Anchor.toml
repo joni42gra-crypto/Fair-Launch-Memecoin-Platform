@@ -1,0 +1,9 @@
+[programs.devnet]
+launchpad_escrow = "DqZiBhjX49fyGPL3RkTw2PJeuo9aASPCrPcnaw485Zod"
+
+[provider]
+cluster = "Devnet"
+wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["programs/launchpad-escrow"]
