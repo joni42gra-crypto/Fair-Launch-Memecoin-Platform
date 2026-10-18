@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Fairlaunch"
+description = "A community-funded fair-launch platform prototype for proposing meme tokens and exploring equal $10 USDC demo commitments, with no real cryptocurrency transactions."
+version = "1.0.0"
+id = "artifacts/fairlaunch"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20491
+
+[services.development]
+run = "pnpm --filter @workspace/fairlaunch run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fairlaunch", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/fairlaunch/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20491"
+BASE_PATH = "/"

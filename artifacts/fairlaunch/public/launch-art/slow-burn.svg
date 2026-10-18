@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="32" y1="18" x2="222" y2="244" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#23213A"/><stop offset="1" stop-color="#171B20"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="123" y1="63" x2="136" y2="203" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE8A1"/><stop offset=".48" stop-color="#FF9C65"/><stop offset="1" stop-color="#E85A78"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 99 -98 0 128 143)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8756A" stop-opacity=".34"/><stop offset="1" stop-color="#E8756A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="32" fill="url(#bg)"/>
+  <circle cx="128" cy="145" r="98" fill="url(#glow)"/>
+  <path d="M38 198h180" stroke="#55505A" stroke-width="3" stroke-linecap="round"/>
+  <path d="M83 199c5-23 20-36 45-39 25 3 40 16 45 39" fill="#322B30" stroke="#76605A" stroke-width="3"/>
+  <path d="M102 178c0-28 23-38 18-77 26 20 13 33 29 47 12 11 12 21 7 30-6 12-19 20-30 20-14 0-24-8-24-20Z" fill="url(#flame)"/>
+  <path d="M119 181c0-12 12-16 10-32 13 11 9 18 15 24 8 9 1 21-11 21-8 0-14-5-14-13Z" fill="#FFF0BD"/>
+  <circle cx="70" cy="72" r="2" fill="#E7B879"/><circle cx="188" cy="60" r="2" fill="#E7B879"/>
+  <path d="M70 55v10M65 60h10M190 93v8m-4-4h8" stroke="#E7B879" stroke-width="2" stroke-linecap="round"/>
+</svg>
