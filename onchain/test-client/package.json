@@ -1,0 +1,14 @@
+{
+  "name": "@workspace/launchpad-escrow-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node ./run-local-tests.mjs",
+    "test:integration": "node ./integration.mjs",
+    "fixtures": "node ./generate-fixtures.mjs"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "1.98.4"
+  }
+}
