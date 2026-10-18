@@ -25,6 +25,7 @@ import {
 import { type CatalogMembershipStatus, type PairAssetCategory, type SelectedPairToken, type TokenCatalogEntry } from './lib/token-catalog';
 import { type PairCompatibilityStatus } from './lib/pair-compatibility';
 import './proposal.css';
+import './light-routes.css';
 import { LaunchpadPage } from './components/proposal/LaunchpadPage';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
@@ -669,7 +670,7 @@ function AppContent() {
     }, 650);
   };
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${location !== '/propose' ? 'light-migration' : ''}`}>
     {location !== '/propose' && <Nav wallet={wallet} onConnect={() => setModal('connect')} />}
     <Switch>
       <Route path="/"><HomePage launches={launches} /></Route>
