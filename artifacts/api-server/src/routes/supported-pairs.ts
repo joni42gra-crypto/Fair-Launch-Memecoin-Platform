@@ -33,10 +33,12 @@ router.get("/tokens/supported-pairs", (req, res): void => {
   }
 
   try {
-    const query = normalizeSearch(parsed.data.query ?? "");
-    const results = (query ? supportedPairCatalog.assets
+    const rawSearch = parsed.data.query ?? "";
+    const normalizedQuery = normalizeSearch(rawSearch);
+    const results = (rawSearch ? supportedPairCatalog.assets
       .filter(([ticker, name, mintAddress]) =>
-        [ticker, name, mintAddress].some(value => normalizeSearch(value).includes(query)),
+        [ticker, name].some(value => normalizeSearch(value).includes(normalizedQuery)) ||
+        mintAddress.includes(rawSearch),
       ) : [])
       .slice(0, MAX_RESULTS)
       .map(([ticker, name, mintAddress, category]) => ({

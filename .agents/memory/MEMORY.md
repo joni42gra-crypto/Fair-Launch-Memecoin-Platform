@@ -1,1 +1,2 @@
 - [Launchpad scope](launchpad-scope.md) — preserve the existing app and working features; UI-only changes must not imply real token launches or transactions.
+- [Pump.fun pair catalog](pump-pair-catalog.md) — use the published docs snapshot; catalog membership is not compatibility verification.

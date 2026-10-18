@@ -57,6 +57,7 @@ export interface SupportedPairAsset {
 export interface SupportedPairAssetSearchResponse {
   sourceUrl: string;
   sourceLastUpdated: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   snapshotCapturedAt: string;
   /** @minimum 0 */
   totalAssets: number;

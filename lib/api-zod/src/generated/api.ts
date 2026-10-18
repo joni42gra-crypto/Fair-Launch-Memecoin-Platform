@@ -30,6 +30,7 @@ export const SearchSupportedPairAssetsQueryParams = zod.object({
   "query": zod.coerce.string().min(searchSupportedPairAssetsQueryQueryMin).max(searchSupportedPairAssetsQueryQueryMax).optional().describe('Supported pair asset name, ticker, or mint address.')
 })
 
+export const searchSupportedPairAssetsResponseSnapshotCapturedAtRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const searchSupportedPairAssetsResponseTotalAssetsMin = 0;
 
 
@@ -40,7 +41,7 @@ export const searchSupportedPairAssetsResponseTotalAssetsMin = 0;
 export const SearchSupportedPairAssetsResponse = zod.object({
   "sourceUrl": zod.string().url(),
   "sourceLastUpdated": zod.string(),
-  "snapshotCapturedAt": zod.coerce.date(),
+  "snapshotCapturedAt": zod.string().regex(searchSupportedPairAssetsResponseSnapshotCapturedAtRegExp),
   "totalAssets": zod.number().int().min(searchSupportedPairAssetsResponseTotalAssetsMin),
   "results": zod.array(zod.object({
   "mintAddress": zod.string().min(1),

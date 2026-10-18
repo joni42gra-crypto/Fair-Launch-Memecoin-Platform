@@ -10,7 +10,8 @@ import type { SupportedPairAsset } from './supportedPairAsset';
 export interface SupportedPairAssetSearchResponse {
   sourceUrl: string;
   sourceLastUpdated: string;
-  snapshotCapturedAt: Date;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  snapshotCapturedAt: string;
   /** @minimum 0 */
   totalAssets: number;
   results: SupportedPairAsset[];

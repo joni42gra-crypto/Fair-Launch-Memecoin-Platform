@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const sourceUrl = "https://pump.fun/docs/custom-pairs";
@@ -99,7 +99,18 @@ async function main() {
 
   const { assets, sourceDate } = extractCatalog(await response.text());
   if (process.argv.includes("--check")) {
-    console.log(`Official table verified: ${assets.length} assets; page updated ${sourceDate}. Snapshot unchanged.`);
+    const currentSource = await readFile(outputPath, "utf8");
+    const currentAssetsMatch = currentSource.match(
+      /assets:\s*(\[[\s\S]*?\])\s+satisfies readonly SupportedPairRow\[\],/,
+    );
+    const currentDate = currentSource.match(/sourceLastUpdated:\s*"([^"]+)"/)?.[1];
+    const currentAssets = currentAssetsMatch
+      ? JSON.parse(currentAssetsMatch[1].replace(/,\s*\]/g, "]"))
+      : null;
+    if (!currentAssets || JSON.stringify(currentAssets) !== JSON.stringify(assets) || currentDate !== sourceDate) {
+      throw new Error("The checked-in snapshot differs from the official page. Review the changes, then run update:supported-pairs.");
+    }
+    console.log(`Snapshot matches all ${assets.length} official rows; page updated ${sourceDate}.`);
     return;
   }
 
