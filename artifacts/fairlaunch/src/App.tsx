@@ -1,7 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { ArrowUpRight, Check, Clock3, ExternalLink, Plus, ShieldCheck, Users, Wallet, X } from 'lucide-react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { Form, FormField } from '@/components/ui/form';
 import { Activity, Launch, SEED_ACTIVITIES, SEED_LAUNCHES, shortAddress } from './data';
+import {
+  DEFAULT_HOLDER_REWARD_BPS,
+  DEFAULT_PAIR_MINT_ADDRESS,
+  DEFAULT_PAIR_TYPE,
+  MAX_HOLDER_REWARD_BPS,
+  MIN_HOLDER_REWARD_BPS,
+  PAIR_TYPE_LABELS,
+  PAIR_TYPE_OPTIONS,
+  isPairType,
+  isValidSolanaMintAddress,
+  launchProposalSchema,
+  type LaunchProposalFormInput,
+  type LaunchProposalInput,
+} from './lib/launch-validation';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
 const ACTIVITY_KEY = 'fairlaunch.demo.activity.v1';
@@ -16,10 +33,29 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
-function usePersistedState<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(() => readStorage(key, initial));
+function usePersistedState<T>(key: string, initial: T, normalize?: (value: T) => T) {
+  const [value, setValue] = useState<T>(() => {
+    const stored = readStorage(key, initial);
+    return normalize ? normalize(stored) : stored;
+  });
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* local demo storage can be unavailable */ } }, [key, value]);
   return [value, setValue] as const;
+}
+
+function normalizeLaunches(launches: Launch[]): Launch[] {
+  return launches.map((launch) => ({
+    ...launch,
+    pairType: isPairType(launch.pairType) ? launch.pairType : DEFAULT_PAIR_TYPE,
+    pairMintAddress: isValidSolanaMintAddress(launch.pairMintAddress ?? '')
+      ? launch.pairMintAddress
+      : DEFAULT_PAIR_MINT_ADDRESS,
+    holderRewardBps:
+      Number.isInteger(launch.holderRewardBps) &&
+      launch.holderRewardBps >= MIN_HOLDER_REWARD_BPS &&
+      launch.holderRewardBps <= MAX_HOLDER_REWARD_BPS
+        ? launch.holderRewardBps
+        : DEFAULT_HOLDER_REWARD_BPS,
+  }));
 }
 
 function formatDate(date: string) {
@@ -153,6 +189,12 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
       <section className="panel">
         <div className="detail-heading"><Artwork launch={launch} /><div><span className={`status ${launch.status === 'completed' ? 'complete' : ''}`}>{launch.status === 'completed' ? 'Goal reached' : 'Active demo'}</span><h1>{launch.name}</h1><span className="ticker">${launch.ticker} · by {launch.creatorWallet}</span></div></div>
         <p className="detail-content">{launch.description}</p>
+        <div className="pair-summary" data-testid="launch-pair-settings">
+          <div className="pair-summary-item"><span className="stat-label">Trading pair type</span><span className="stat-value">{PAIR_TYPE_LABELS[launch.pairType]}</span></div>
+          <div className="pair-summary-item"><span className="stat-label">Pair mint address</span><span className="stat-value mono" title={launch.pairMintAddress}>{shortAddress(launch.pairMintAddress)}</span></div>
+          <div className="pair-summary-item"><span className="stat-label">Holder Rewards · demo setting</span><span className="stat-value">{(launch.holderRewardBps / 100).toFixed(2)}%</span></div>
+        </div>
+        <div className="pair-validation-note">Pair support and reward-rate eligibility have not been checked with Pump.fun.</div>
         <div className="detail-stats">
           <div className="detail-stat"><span className="stat-label">Participants</span><span className="stat-value">{launch.participantCount} / {launch.targetParticipantCount}</span></div>
           <div className="detail-stat"><span className="stat-label">Demo amount shown</span><span className="stat-value">${launch.committedAmountUsd.toLocaleString()}</span></div>
@@ -185,39 +227,54 @@ function LaunchPage({ id, launches, activities, wallet, onConnect, onCommit }: {
   </main>;
 }
 
-function ProposePage({ onAdd }: { onAdd: (data: { name: string; ticker: string; imageUrl: string; sourceUrl: string; description: string }) => void }) {
-  const [form, setForm] = useState({ name: '', ticker: '', imageUrl: '', sourceUrl: '', description: '' });
-  const [error, setError] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const update = (key: keyof typeof form, value: string) => setForm(current => ({ ...current, [key]: value }));
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (form.name.trim().length < 2) { setError('Give the launch a name with at least 2 characters.'); return; }
-    if (!/^[a-zA-Z0-9]{2,10}$/.test(form.ticker.trim())) { setError('Ticker must be 2–10 letters or numbers.'); return; }
-    if (form.description.trim().length < 12) { setError('Add a little more context (at least 12 characters).'); return; }
-    if (form.sourceUrl.trim() && !/^https?:\/\/.+/i.test(form.sourceUrl.trim())) { setError('Source URL should start with http:// or https://.'); return; }
-    setError('');
-    onAdd({ ...form, name: form.name.trim(), ticker: form.ticker.trim().toUpperCase() });
-    setSubmitted(true);
+function ProposePage({ onAdd }: { onAdd: (data: LaunchProposalInput) => void }) {
+  const [submittedProposal, setSubmittedProposal] = useState<LaunchProposalInput | null>(null);
+  const form = useForm<LaunchProposalFormInput>({
+    resolver: zodResolver(launchProposalSchema),
+    defaultValues: {
+      name: '',
+      ticker: '',
+      pairType: '',
+      pairMintAddress: '',
+      holderRewardBps: DEFAULT_HOLDER_REWARD_BPS,
+      imageUrl: '',
+      sourceUrl: '',
+      description: '',
+    },
+  });
+  const holderRewardBps = form.watch('holderRewardBps') ?? DEFAULT_HOLDER_REWARD_BPS;
+  const descriptionLength = form.watch('description')?.length ?? 0;
+
+  function submit(values: LaunchProposalFormInput) {
+    if (!isPairType(values.pairType)) return;
+    const proposal: LaunchProposalInput = { ...values, pairType: values.pairType };
+    onAdd(proposal);
+    setSubmittedProposal(proposal);
   }
-  if (submitted) return <main className="main"><div className="page-top"><span className="section-kicker">Proposal added / demo</span></div><div className="empty-state" data-testid="success-proposal"><div className="empty-mark"><Check size={19} /></div><h3>Your idea has a launch page</h3><p>{form.name} is now visible in active demos. Proposing does not create a token, collect funds, or start a blockchain process.</p><div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}><Link href="/" className="button button-primary" data-testid="button-proposal-home">Explore launches</Link><button className="button button-quiet" onClick={() => { setSubmitted(false); setForm({ name: '', ticker: '', imageUrl: '', sourceUrl: '', description: '' }); }} data-testid="button-propose-another">Propose another</button></div></div><Footer /></main>;
+
+  if (submittedProposal) return <main className="main"><div className="page-top"><span className="section-kicker">Proposal saved / demo</span></div><div className="empty-state" data-testid="success-proposal"><div className="empty-mark"><Check size={19} /></div><h3>Your idea has a demo page</h3><p>{submittedProposal.name} is saved as a local proposal. This does not create or launch a token, check pair eligibility, calculate rewards, or send a transaction.</p><div className="proposal-result-meta"><span>{PAIR_TYPE_LABELS[submittedProposal.pairType]}</span><span>Holder Rewards {(submittedProposal.holderRewardBps / 100).toFixed(2)}%</span></div><div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}><Link href="/" className="button button-primary" data-testid="button-proposal-home">Explore launches</Link><button className="button button-quiet" onClick={() => { setSubmittedProposal(null); form.reset(); }} data-testid="button-propose-another">Propose another</button></div></div><Footer /></main>;
   return <main className="main">
     <div className="page-top"><span className="section-kicker">Start with the story / 03</span><h1 className="page-title">Propose a meme.</h1><p className="page-intro">Give the community something worth showing up for. Your proposal becomes a demo launch page only — no token is created and no funds are collected.</p></div>
     <div className="form-layout">
-      <form className="panel" onSubmit={submit} data-testid="form-propose">
+      <Form {...form}>
+      <form className="panel" onSubmit={form.handleSubmit(submit)} data-testid="form-propose">
         <h2>Tell us what the internet made</h2>
-        <div className="field"><label htmlFor="token-name">Token name</label><input id="token-name" value={form.name} onChange={e => update('name', e.target.value)} placeholder="e.g. The Last Braincell" maxLength={48} data-testid="input-token-name" required /></div>
-        <div className="field"><label htmlFor="token-ticker">Ticker</label><input id="token-ticker" value={form.ticker} onChange={e => update('ticker', e.target.value.toUpperCase())} placeholder="e.g. BRAIN" maxLength={10} data-testid="input-token-ticker" required /><div className="field-hint">2–10 letters or numbers. It will display as a ticker only.</div></div>
-        <div className="field"><label htmlFor="image-url">Image URL <span className="field-hint">(optional)</span></label><input id="image-url" type="url" value={form.imageUrl} onChange={e => update('imageUrl', e.target.value)} placeholder="https://..." data-testid="input-image-url" /><div className="field-hint">Display-only prototype value; not uploaded or verified.</div></div>
-        <div className="field"><label htmlFor="source-url">Source URL <span className="field-hint">(optional)</span></label><input id="source-url" type="url" value={form.sourceUrl} onChange={e => update('sourceUrl', e.target.value)} placeholder="Link to the original post or meme" data-testid="input-source-url" /></div>
-        <div className="field"><label htmlFor="description">The story</label><textarea id="description" value={form.description} onChange={e => update('description', e.target.value)} placeholder="What happened, and why is this one worth a shared shot?" maxLength={380} data-testid="input-description" required /><div className="field-hint">{form.description.length}/380 characters</div></div>
-        {error && <div className="error-line" role="alert" data-testid="error-proposal">{error}</div>}
-        <button type="submit" className="button button-primary button-wide" style={{ marginTop: 5 }} data-testid="button-submit-proposal">Add demo launch <ArrowUpRight size={15} /></button>
+        <FormField control={form.control} name="name" render={({ field, fieldState }) => <div className="field"><label htmlFor="token-name">Token name</label><input {...field} id="token-name" placeholder="e.g. The Last Braincell" maxLength={48} data-testid="input-token-name" required aria-invalid={fieldState.invalid} />{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <FormField control={form.control} name="ticker" render={({ field, fieldState }) => <div className="field"><label htmlFor="token-ticker">Ticker</label><input {...field} id="token-ticker" onChange={event => field.onChange(event.target.value.toUpperCase())} placeholder="e.g. BRAIN" maxLength={10} data-testid="input-token-ticker" required aria-invalid={fieldState.invalid} /><div className="field-hint">2–10 letters or numbers. It will display as a ticker only.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <FormField control={form.control} name="pairType" render={({ field, fieldState }) => <div className="field"><label htmlFor="pair-type">Trading pair type</label><select {...field} id="pair-type" value={field.value ?? ''} data-testid="select-pair-type" required aria-invalid={fieldState.invalid}><option value="" disabled>Choose a pair category</option>{PAIR_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <FormField control={form.control} name="pairMintAddress" render={({ field, fieldState }) => <div className="field"><label htmlFor="pair-mint-address">Pair token mint address</label><input {...field} id="pair-mint-address" type="text" inputMode="text" autoComplete="off" spellCheck={false} minLength={32} maxLength={44} placeholder="Solana Base58 mint address" data-testid="input-pair-mint-address" required aria-invalid={fieldState.invalid} /><div className="field-hint">Enter the token mint address for the selected pair. This checks Base58 format and 32-byte length only.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <FormField control={form.control} name="holderRewardBps" render={({ field, fieldState }) => <div className="field reward-field"><div className="reward-slider-header"><label htmlFor="holder-reward-rate">Holder Rewards</label><strong data-testid="text-holder-reward-rate">{(holderRewardBps / 100).toFixed(2)}%</strong></div><input {...field} id="holder-reward-rate" type="range" min={MIN_HOLDER_REWARD_BPS} max={MAX_HOLDER_REWARD_BPS} step={1} value={holderRewardBps} onChange={event => field.onChange(Number(event.target.value))} data-testid="slider-holder-rewards" aria-label="Holder Rewards rate" aria-valuetext={`${(holderRewardBps / 100).toFixed(2)} percent`} aria-invalid={fieldState.invalid} /><div className="range-limits"><span>0.01%</span><span>3.00%</span></div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}<p className="rewards-explanation">Rewards are intended for eligible holders of the selected pair token, distributed under Pump.fun rules. This prototype does not calculate or distribute rewards.</p></div>} />
+        <FormField control={form.control} name="imageUrl" render={({ field, fieldState }) => <div className="field"><label htmlFor="image-url">Image URL <span className="field-hint">(optional)</span></label><input {...field} id="image-url" type="url" placeholder="https://..." data-testid="input-image-url" aria-invalid={fieldState.invalid} /><div className="field-hint">Display-only prototype value; not uploaded or verified.</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <FormField control={form.control} name="sourceUrl" render={({ field, fieldState }) => <div className="field"><label htmlFor="source-url">Source URL <span className="field-hint">(optional)</span></label><input {...field} id="source-url" type="url" placeholder="Link to the original post or meme" data-testid="input-source-url" aria-invalid={fieldState.invalid} />{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <FormField control={form.control} name="description" render={({ field, fieldState }) => <div className="field"><label htmlFor="description">The story</label><textarea {...field} id="description" placeholder="What happened, and why is this one worth a shared shot?" maxLength={380} data-testid="input-description" required aria-invalid={fieldState.invalid} /><div className="field-hint">{descriptionLength}/380 characters</div>{fieldState.error && <p className="error-line" role="alert">{fieldState.error.message}</p>}</div>} />
+        <div className="pair-validation-note" data-testid="notice-pair-validation">Pair availability and reward-rate eligibility are not verified in this frontend prototype. A future server check must validate them with the official Pump.fun SDK before any real launch.</div>
+        <button type="submit" className="button button-primary button-wide" style={{ marginTop: 5 }} data-testid="button-submit-proposal">Save demo proposal <ArrowUpRight size={15} /></button>
       </form>
+      </Form>
       <aside>
         <div className="side-note"><h3>A launch page, not a launch</h3><p>This prototype stores a proposal in your browser and displays it as an open community idea. No token, pool, or on-chain asset will be created.</p></div>
         <div className="side-note"><h3>One size for everyone</h3><p>Demo participation is fixed at $10, once per wallet per launch. There are no privileged creator shares or whale tiers.</p></div>
-        <div className="side-note"><h3>Links stay as entered</h3><p>Image and source URLs are display-only prototype values. Use a public image address if you want the artwork preview to load.</p></div>
+        <div className="side-note"><h3>Server-side checks come later</h3><p>This form validates the mint address format and required fields only. It does not confirm token support or Pump.fun reward eligibility.</p></div>
       </aside>
     </div>
     <Footer />
@@ -274,7 +331,7 @@ function NotFound() {
 }
 
 function AppContent() {
-  const [launches, setLaunches] = usePersistedState<Launch[]>(LAUNCH_KEY, SEED_LAUNCHES);
+  const [launches, setLaunches] = usePersistedState<Launch[]>(LAUNCH_KEY, SEED_LAUNCHES, normalizeLaunches);
   const [activities, setActivities] = usePersistedState<Activity[]>(ACTIVITY_KEY, SEED_ACTIVITIES);
   const [wallet, setWallet] = usePersistedState<string | null>(WALLET_KEY, null);
   const [modal, setModal] = useState<ModalKind>(null);
@@ -295,7 +352,7 @@ function AppContent() {
     }
     setModal(null);
   };
-  const addLaunch = (proposal: { name: string; ticker: string; imageUrl: string; sourceUrl: string; description: string }) => {
+  const addLaunch = (proposal: LaunchProposalInput) => {
     const id = `${proposal.ticker.toLowerCase()}-${Date.now().toString(36)}`;
     const launch: Launch = {
       ...proposal, id, creatorWallet: wallet ? shortAddress(wallet) : 'Demo proposer',
