@@ -1,14 +1,57 @@
 # Local escrow integration tests
 
-Run from the repository root:
+Run from the repository root on a compatible Linux host:
 
 ```sh
 pnpm --filter @workspace/launchpad-escrow-tests test
 ```
 
-The script builds the program directly with `cargo build-sbf` when its artifact
-is missing or stale (not `anchor build`), loads it at the ID already declared
-in the Rust program, creates synthetic
+## Supported host
+
+Anza's [validator requirements](https://docs.anza.xyz/operations/requirements)
+state that Agave is built and run on Ubuntu 24.04. Anchor 1.0 targets Solana
+3.x and [recommends Agave 3.1.10](https://www.anchor-lang.com/docs/updates/release-notes/1-0-0).
+Use a full Ubuntu 24.04 x86_64 host or VM, not a restricted container. The
+standard GitHub-hosted `ubuntu-24.04` runner is documented as a VM; `ubuntu-slim`
+is a container and does not support some low-level kernel operations. The
+preflight below verifies the actual syscall/features rather than assuming an
+OS label guarantees them.
+
+The Agave 3.1.10 source checks for `IORING_FEAT_NODROP` and
+`IORING_FEAT_SQPOLL_NONFIXED` when setting up its filesystem operations. The
+test runner probes those exact kernel features before compiling or starting the
+validator and fails early if they are unavailable. This check does not alter
+kernel settings.
+
+## Pinned local setup on Ubuntu 24.04
+
+Prerequisites: x86_64 Ubuntu 24.04, Python 3, Node.js 24, and Corepack.
+
+```sh
+mkdir -p .local/share/launchpad-tools
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://release.anza.xyz/v3.1.10/install \
+  -o /tmp/agave-v3.1.10-install.sh
+sh /tmp/agave-v3.1.10-install.sh v3.1.10 \
+  --no-modify-path \
+  --data-dir "$PWD/.local/share/solana/install"
+
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://sh.rustup.rs \
+  -o /tmp/rustup-install.sh
+RUSTUP_HOME="$PWD/.local/share/launchpad-tools/rustup" \
+CARGO_HOME="$PWD/.local/share/launchpad-tools/rustup-cargo" \
+  sh /tmp/rustup-install.sh -y --no-modify-path --default-toolchain none
+
+corepack prepare pnpm@10.26.1 --activate
+pnpm install --frozen-lockfile
+python3 onchain/test-client/check-io-uring.py
+pnpm --filter @workspace/launchpad-escrow-tests test
+```
+
+The script builds the program directly with Agave's `cargo-build-sbf` when its
+artifact is missing or stale (not `anchor build`), loads it at the ID already
+declared in the Rust program, creates synthetic
 `PriceUpdateV2` accounts, starts `solana-test-validator` bound to
 `127.0.0.1:18999`, runs the tests, and removes the temporary ledger and
 fixtures. It does not connect to Devnet or Mainnet.
@@ -37,8 +80,7 @@ The local test tools are kept under the ignored workspace directory
 `.local/share/` so they survive a Replit runtime refresh without being committed
 or included in deployment images.
 
-Some container kernels do not support the `io_uring` capability required by
-Agave 3.1.10's test validator. On such a host, the validator panics before RPC
-startup and the integration tests cannot run; do not try to bypass this by
-changing kernel settings or replacing the pinned validator with an unverified
-version.
+The current Replit host fails this preflight with `Operation not permitted`
+for `io_uring_setup`. No integration assertions were executed here. Do not
+bypass this by changing kernel settings or replacing the pinned validator with
+an unverified version.

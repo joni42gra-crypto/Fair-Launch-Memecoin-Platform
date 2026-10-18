@@ -106,6 +106,11 @@ try {
     throw new Error("Program ID differs between lib.rs and Anchor.toml; refusing to test.");
   }
   const programId = new PublicKey(sourceId);
+  console.log("Checking Linux io_uring support required by Agave 3.1.10...");
+  run("python3", [path.join(here, "check-io-uring.py")], {
+    cwd: here,
+  });
+
   const validatorBinary = path.join(solanaBin, "solana-test-validator");
   await access(validatorBinary);
 
