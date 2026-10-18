@@ -17,6 +17,13 @@ is a container and does not support some low-level kernel operations. The
 preflight below verifies the actual syscall/features rather than assuming an
 OS label guarantees them.
 
+The separate GitHub Actions workflow is named **Launchpad escrow integration
+tests** and runs on pull requests, pushes touching the on-chain test inputs,
+or manually through **Actions → Launchpad escrow integration tests → Run
+workflow**. It uses the full `ubuntu-24.04` runner, checks `io_uring` before
+building, and exits immediately with the preflight error if the runner blocks
+the required features.
+
 The Agave 3.1.10 source checks for `IORING_FEAT_NODROP` and
 `IORING_FEAT_SQPOLL_NONFIXED` when setting up its filesystem operations. The
 test runner probes those exact kernel features before compiling or starting the

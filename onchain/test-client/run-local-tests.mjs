@@ -16,7 +16,10 @@ const programSource = path.join(
 const anchorConfig = path.join(onchainDir, "Anchor.toml");
 const programSo = path.join(onchainDir, "target/deploy/launchpad_escrow.so");
 const fixturesDir = path.join(here, "fixtures");
-const ledgerDir = path.join(os.tmpdir(), `launchpad-escrow-validator-${process.pid}`);
+const ledgerDir = path.join(
+  os.tmpdir(),
+  `launchpad-escrow-validator-${process.pid}`,
+);
 const localToolsDir = path.join(workspaceRoot, ".local/share");
 const solanaBin =
   process.env.ESCROW_SOLANA_BIN ??
@@ -55,7 +58,9 @@ async function programArtifactIsStale() {
     return true;
   }
   const latestInput = Math.max(
-    ...(await Promise.all(inputs.map(async (file) => (await stat(file)).mtimeMs))),
+    ...(await Promise.all(
+      inputs.map(async (file) => (await stat(file)).mtimeMs),
+    )),
   );
   return artifact.mtimeMs < latestInput;
 }
@@ -68,7 +73,9 @@ async function waitForValidator(child, connection) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     if (childError) throw childError;
     if (child.exitCode !== null) {
-      throw new Error(`solana-test-validator exited with code ${child.exitCode}`);
+      throw new Error(
+        `solana-test-validator exited with code ${child.exitCode}`,
+      );
     }
     try {
       await connection.getVersion();
@@ -103,7 +110,9 @@ try {
   const config = await readFile(anchorConfig, "utf8");
   const configId = config.match(/launchpad_escrow\s*=\s*"([^"]+)"/)?.[1];
   if (!sourceId || sourceId !== configId) {
-    throw new Error("Program ID differs between lib.rs and Anchor.toml; refusing to test.");
+    throw new Error(
+      "Program ID differs between lib.rs and Anchor.toml; refusing to test.",
+    );
   }
   const programId = new PublicKey(sourceId);
   console.log("Checking Linux io_uring support required by Agave 3.1.10...");
@@ -118,15 +127,18 @@ try {
     ...process.env,
     CARGO_HOME: cargoHome,
     RUSTUP_HOME: rustupHome,
-    PATH: [
-      path.join(cargoHome, "bin"),
-      solanaBin,
-      process.env.PATH ?? "",
-    ].join(path.delimiter),
+    PATH: [path.join(cargoHome, "bin"), solanaBin, process.env.PATH ?? ""].join(
+      path.delimiter,
+    ),
   };
 
-  if (process.env.ESCROW_ALWAYS_BUILD === "1" || (await programArtifactIsStale())) {
-    console.log("Building the on-chain program with Agave's pinned SBF toolchain...");
+  if (
+    process.env.ESCROW_ALWAYS_BUILD === "1" ||
+    (await programArtifactIsStale())
+  ) {
+    console.log(
+      "Building the on-chain program with Agave's pinned SBF toolchain...",
+    );
     run(
       path.join(solanaBin, "cargo-build-sbf"),
       [
@@ -134,6 +146,10 @@ try {
         path.join(onchainDir, "programs/launchpad-escrow/Cargo.toml"),
         "--sbf-out-dir",
         path.join(onchainDir, "target/deploy"),
+        "--tools-version",
+        "v1.52",
+        "--",
+        "--locked",
       ],
       { cwd: onchainDir, env: rustupEnv },
     );
@@ -169,7 +185,9 @@ try {
   });
   exitPromise = new Promise((resolve) => validator.once("exit", resolve));
   await waitForValidator(validator, new Connection(rpcUrl, "confirmed"));
-  console.log(`Local validator ready at ${rpcUrl}; no external cluster is used.`);
+  console.log(
+    `Local validator ready at ${rpcUrl}; no external cluster is used.`,
+  );
 
   run(process.execPath, ["./integration.mjs"], {
     cwd: here,
@@ -177,7 +195,9 @@ try {
   });
   testPassed = true;
 } catch (error) {
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  console.error(
+    error instanceof Error ? (error.stack ?? error.message) : error,
+  );
   process.exitCode = 1;
 } finally {
   await stopValidator(validator, exitPromise ?? Promise.resolve());
