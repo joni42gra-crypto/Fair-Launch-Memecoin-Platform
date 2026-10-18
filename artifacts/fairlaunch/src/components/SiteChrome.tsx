@@ -21,7 +21,7 @@ export function SiteChrome({ children, wallet, onConnect }: {
         <small>WORKSPACE</small>
         <Link href="/"><Compass size={16} />Overview</Link>
         <Link href="/" className={explore ? 'active' : ''} aria-current={explore ? 'page' : undefined} data-testid="link-nav-explore"><Search size={16} />Explore</Link>
-        <Link href="/propose" data-testid="link-nav-propose"><Sparkles size={16} />Propose</Link>
+        <Link href="/propose" data-testid="link-nav-propose"><Sparkles size={16} />Launcher</Link>
         <Link href="/activity" className={activity ? 'active' : ''} aria-current={activity ? 'page' : undefined} data-testid="link-nav-activity"><Activity size={16} />Activity</Link>
         <small>RESOURCES</small>
         <a href="https://pump.fun/docs/custom-pairs" target="_blank" rel="noreferrer"><Info size={16} />Documentation</a>

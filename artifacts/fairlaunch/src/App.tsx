@@ -163,7 +163,7 @@ function HomePage({ launches }: { launches: Launch[] }) {
         <p>A launch space where meme communities show up together. Same $10 demo commitment. Same starting line. No whale tier, no creator allocation.</p>
         <div className="hero-actions">
           <a href="#active-launches" className="button button-primary" data-testid="button-explore-launches">Explore launches <ArrowUpRight size={15} /></a>
-          <Link href="/propose" className="button button-quiet" data-testid="button-propose-hero"><Plus size={15} /> Propose a meme</Link>
+          <Link href="/propose" className="button button-quiet" data-testid="button-propose-hero"><Plus size={15} /> Open Launcher</Link>
         </div>
         <div className="hero-note"><span className="live-led">● ALL ACTIVITY IS SIMULATED</span><span>Not connected to a blockchain</span></div>
       </div>
@@ -173,7 +173,7 @@ function HomePage({ launches }: { launches: Launch[] }) {
       <div className="section-head"><div><span className="section-kicker">Open calls / 01</span><h2>Find your people</h2><p className="section-sub">Every participant contributes the same fixed $10 in this demo.</p></div><Link href="/activity" className="text-link" data-testid="link-view-activity">View demo activity <ArrowUpRight size={13} /></Link></div>
       {loading ? <div className="loading-lines" aria-label="Loading launches" data-testid="loading-launches"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>
         : active.length ? <div className="launch-grid" data-testid="list-active-launches">{active.map(launch => <LaunchCard key={launch.id} launch={launch} />)}</div>
-        : <div className="empty-state" data-testid="empty-active-launches"><div className="empty-mark"><Plus size={19} /></div><h3>No open launches yet</h3><p>The next community idea could start here. Propose a meme for everyone to rally around.</p><Link href="/propose" className="button button-primary" data-testid="button-empty-propose">Propose a meme</Link></div>}
+        : <div className="empty-state" data-testid="empty-active-launches"><div className="empty-mark"><Plus size={19} /></div><h3>No open launches yet</h3><p>The next community idea could start here. Use the Launcher to share a meme for everyone to rally around.</p><Link href="/propose" className="button button-primary" data-testid="button-empty-propose">Open Launcher</Link></div>}
     </section>
 
     <section className="section">
@@ -185,7 +185,7 @@ function HomePage({ launches }: { launches: Launch[] }) {
     <section className="section mechanics">
       <div className="mechanics-intro"><span className="section-kicker">The rules are the product</span><h2>Same amount.<br />Same starting line.</h2><p>Fair means the mechanics do not quietly change when a bigger wallet walks in. Every community member gets one equal-sized demo commitment.</p></div>
       <div className="steps">
-        <div className="step"><span className="step-no">01</span><div><h3>Bring a meme with a pulse</h3><p>Anyone can propose an idea and link its source. Proposing creates a launch page, never a token.</p></div></div>
+        <div className="step"><span className="step-no">01</span><div><h3>Bring a meme with a pulse</h3><p>Anyone can share an idea and link its source using the Launcher. This creates a demo launch page, never a token.</p></div></div>
         <div className="step"><span className="step-no">02</span><div><h3>Show up for exactly $10</h3><p>One commitment per demo wallet per launch. No larger contribution, no private creator allocation.</p></div></div>
         <div className="step"><span className="step-no">03</span><div><h3>Reach the people target</h3><p>The goal is a number of unique participants, not a race to collect a bigger pile of money.</p></div></div>
       </div>
@@ -446,12 +446,12 @@ export function PreviousProposePage({ onAdd }: { onAdd: (data: LaunchProposalInp
 
   if (submittedProposal) return <main className="main proposal-update proposal-main">
     <div className="page-top"><span className="section-kicker">Proposal saved / demo</span></div>
-    <div className="empty-state" data-testid="success-proposal"><div className="empty-mark"><Check size={19} /></div><h3>Your idea has a demo page</h3><p>{submittedProposal.name} is saved in this browser only. This does not create or launch a token, check pair eligibility, calculate rewards, or send a transaction.</p><div className="proposal-result-meta"><span>{PAIR_TYPE_LABELS[submittedProposal.pairType]}</span><span>Holder Rewards {(submittedProposal.holderRewardBps / 100).toFixed(2)}%</span></div><div className="proposal-result-actions"><Link href="/" className="button button-primary" data-testid="button-proposal-home">Explore launches</Link><button className="button button-quiet" onClick={resetProposal} data-testid="button-propose-another">Propose another</button></div></div><Footer />
+    <div className="empty-state" data-testid="success-proposal"><div className="empty-mark"><Check size={19} /></div><h3>Your idea has a demo page</h3><p>{submittedProposal.name} is saved in this browser only. This does not create or launch a token, check pair eligibility, calculate rewards, or send a transaction.</p><div className="proposal-result-meta"><span>{PAIR_TYPE_LABELS[submittedProposal.pairType]}</span><span>Holder Rewards {(submittedProposal.holderRewardBps / 100).toFixed(2)}%</span></div><div className="proposal-result-actions"><Link href="/" className="button button-primary" data-testid="button-proposal-home">Explore launches</Link><button className="button button-quiet" onClick={resetProposal} data-testid="button-propose-another">Back to Launcher</button></div></div><Footer />
   </main>;
 
   return <main className="main proposal-update proposal-main">
     <div className="proposal-hero">
-      <div className="page-top"><span className="section-kicker">Start with the story <span className="step-divider">/</span> 03</span><h1 className="page-title">Propose a <em>meme.</em></h1><p className="page-intro">Give the community something worth showing up for. Your proposal becomes a demo launch page only — no token is created and no funds are collected.</p></div>
+      <div className="page-top"><span className="section-kicker">Start with the story <span className="step-divider">/</span> 03</span><h1 className="page-title"><em>Launcher.</em></h1><p className="page-intro">Give the community something worth showing up for. Your proposal becomes a demo launch page only — no token is created and no funds are collected.</p></div>
       <div className="hero-stamp"><span className="stamp-orbit"><ShieldCheck size={15} /></span><span>Community<br />idea board</span></div>
     </div>
     <div className="form-layout proposal-layout">
