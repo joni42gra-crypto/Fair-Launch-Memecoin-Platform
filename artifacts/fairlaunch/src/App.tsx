@@ -27,6 +27,7 @@ import { type PairCompatibilityStatus } from './lib/pair-compatibility';
 import './proposal.css';
 import './light-routes.css';
 import { LaunchpadPage } from './components/proposal/LaunchpadPage';
+import { SiteChrome } from './components/SiteChrome';
 
 const LAUNCH_KEY = 'fairlaunch.demo.launches.v2';
 const ACTIVITY_KEY = 'fairlaunch.demo.activity.v1';
@@ -104,29 +105,6 @@ function formatDate(date: string) {
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return 'Date unavailable';
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function Nav({ wallet, onConnect }: { wallet: string | null; onConnect: () => void }) {
-  const [location] = useLocation();
-  const navItems = [
-    { href: '/', label: 'Explore' },
-    { href: '/propose', label: 'Propose' },
-    { href: '/activity', label: 'Activity' },
-  ];
-  return <header className="topbar">
-    <div className="topbar-inner">
-      <Link href="/" className="brand" data-testid="link-brand"><span className="brand-mark">f</span><span>fairlaunch</span></Link>
-      <nav className="nav-links" aria-label="Main navigation">
-        {navItems.map(item => <Link key={item.href} href={item.href} className={`nav-link ${location === item.href || (item.href === '/' && location.startsWith('/launch/')) ? 'active' : ''}`} data-testid={`link-nav-${item.label.toLowerCase()}`}>{item.label}</Link>)}
-      </nav>
-      <div className="nav-right">
-        <span className="demo-pill"><i className="demo-dot" />Demo mode</span>
-        <button className={wallet ? 'button button-quiet' : 'button button-outline'} onClick={onConnect} aria-label={wallet ? 'Manage demo wallet' : 'Connect demo wallet'} data-testid="button-connect-wallet">
-          <Wallet size={14} />{wallet ? shortAddress(wallet) : 'Connect'}
-        </button>
-      </div>
-    </div>
-  </header>;
 }
 
 function Footer() {
@@ -670,15 +648,15 @@ function AppContent() {
     }, 650);
   };
 
-  return <div className={`app-shell ${location !== '/propose' ? 'light-migration' : ''}`}>
-    {location !== '/propose' && <Nav wallet={wallet} onConnect={() => setModal('connect')} />}
-    <Switch>
+  const pages = <Switch>
       <Route path="/"><HomePage launches={launches} /></Route>
       <Route path="/propose"><LaunchpadPage onAdd={addLaunch} wallet={wallet ?? ''} onConnect={() => setModal('connect')} /></Route>
       <Route path="/activity"><ActivityPage activities={activities} launches={launches} wallet={wallet} /></Route>
       <Route path="/launch/:id">{params => <LaunchPage id={params.id} launches={launches} activities={activities} wallet={wallet} onConnect={() => setModal('connect')} onCommit={startCommit} />}</Route>
       <Route><NotFound /></Route>
-    </Switch>
+    </Switch>;
+  return <div className={`app-shell ${location !== '/propose' ? 'light-migration site-with-sidebar' : ''}`}>
+    {location === '/propose' ? pages : <SiteChrome wallet={wallet} onConnect={() => setModal('connect')}>{pages}</SiteChrome>}
     <Dialog kind={modal} launch={selectedLaunch} wallet={wallet} busy={busy} onClose={() => { if (!busy) setModal(null); }} onConnect={connect} onConfirm={confirmCommit} />
     {toast && <div role="status" className="toast" data-testid="status-toast">{toast}</div>}
   </div>;

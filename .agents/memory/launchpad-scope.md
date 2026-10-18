@@ -16,3 +16,9 @@ The proposal creation interface must be in English («и все это на ан
 **Why:** the user requested English when approving the canvas concept for integration into the working site.
 
 **How to apply:** use English for visible text, validation messages, accessibility labels and notices in the proposal creation flow.
+
+The rest of the site must match Propose's overall concept, including tab placement and sidebar navigation, not just its colors. Leave Propose itself unchanged during that migration.
+
+**Why:** the user clarified «расположение вкладок тоже должно быть как в propose вся общая концепция» after a color-only migration left horizontal navigation.
+
+**How to apply:** use Propose as the reference for the desktop sidebar, top bar and responsive navigation as well as visual styling.
