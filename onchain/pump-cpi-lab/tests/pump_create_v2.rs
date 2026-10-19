@@ -49,6 +49,17 @@ const PUMP_INITIAL_REAL_TOKEN_RESERVES: u64 = 793_100_000_000_000;
 const PUMP_FEE_BASIS_POINTS: u64 = 100;
 const PUMP_POOL_MIGRATION_FEE: u64 = 6_900_000_000;
 const PUMP_CREATOR_FEE_BASIS_POINTS: u64 = 50;
+// Normal fee recipients from pump-public-docs commit 639b87fb45c3adeffa6f7c4a1bf0cb85e392bf22.
+const PUMP_NORMAL_FEE_RECIPIENTS: [&str; 8] = [
+    "62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV",
+    "7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ",
+    "7hTckgnGnLQR6sdH7YkqFTAA7VwTfYFaZ6EhEsU3saCX",
+    "9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz",
+    "AVmoTthdrX6tKt4nDjco2D775W2YK3sDhxPcMmzUAmTY",
+    "CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM",
+    "FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz",
+    "G5UZAVbAf46s7cKWoyKu8kYTip9DGTpbLZ2qa9Aq69dP",
+];
 const NAME: &str = "Launchpad Lab Token";
 const SYMBOL: &str = "LLAB";
 const URI: &str = "https://example.invalid/launchpad-lab.json";
@@ -389,15 +400,22 @@ fn pump_set_params_instruction(pump_id: Pubkey, global: Pubkey, authority: Pubke
     data.extend_from_slice(&PUMP_CREATOR_FEE_BASIS_POINTS.to_le_bytes());
     data.extend_from_slice(Pubkey::default().as_ref()); // set_creator_authority (SDK fixture default)
     data.extend_from_slice(Pubkey::default().as_ref()); // admin_set_creator_authority (SDK fixture default)
+    let mut accounts = vec![
+        AccountMeta::new(global, false),
+        AccountMeta::new(authority, true),
+        AccountMeta::new_readonly(event_authority, false),
+        AccountMeta::new_readonly(pump_id, false),
+    ];
+    accounts.extend(PUMP_NORMAL_FEE_RECIPIENTS.iter().map(|address| {
+        AccountMeta::new_readonly(
+            Pubkey::from_str(address).expect("pinned normal fee recipient address"),
+            false,
+        )
+    }));
 
     Instruction {
         program_id: pump_id,
-        accounts: vec![
-            AccountMeta::new(global, false),
-            AccountMeta::new(authority, true),
-            AccountMeta::new_readonly(event_authority, false),
-            AccountMeta::new_readonly(pump_id, false),
-        ],
+        accounts,
         data,
     }
 }
@@ -683,6 +701,34 @@ fn read_global_pubkey(idl: &Value, data: &[u8], field_name: &str) -> Pubkey {
         .unwrap_or_else(|| panic!("cannot decode Pump Global.{field_name}"))
 }
 
+fn read_global_pubkey_array(idl: &Value, data: &[u8], field_name: &str) -> Vec<Pubkey> {
+    let structure = idl["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "Global")
+        .unwrap_or_else(|| panic!("pinned IDL has no type Global"));
+    let field = structure["type"]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|field| field["name"] == field_name)
+        .unwrap_or_else(|| panic!("pinned IDL has no Global.{field_name}"));
+    let array = field["type"]["array"]
+        .as_array()
+        .expect("Global pubkey list must be a fixed-size IDL array");
+    assert_eq!(array.len(), 2);
+    assert_eq!(array[0].as_str(), Some("pubkey"));
+    let count = array[1].as_u64().expect("Global pubkey list length") as usize;
+    let mut offset = idl_field_offset(idl, "Global", field_name);
+    (0..count)
+        .map(|_| {
+            read_pubkey(data, &mut offset)
+                .unwrap_or_else(|| panic!("cannot decode Pump Global.{field_name}"))
+        })
+        .collect()
+}
+
 #[derive(Debug)]
 struct PumpGlobalSnapshot {
     initialized: bool,
@@ -692,6 +738,8 @@ struct PumpGlobalSnapshot {
     initial_real_token_reserves: u64,
     token_total_supply: u64,
     fee_basis_points: u64,
+    fee_recipient: Pubkey,
+    fee_recipients: Vec<Pubkey>,
     withdraw_authority: Pubkey,
     enable_migrate: bool,
     pool_migration_fee: u64,
@@ -733,6 +781,8 @@ fn read_pump_global(idl: &Value, data: &[u8]) -> PumpGlobalSnapshot {
         initial_real_token_reserves: read_global_u64(idl, data, "initial_real_token_reserves"),
         token_total_supply: read_global_u64(idl, data, "token_total_supply"),
         fee_basis_points: read_global_u64(idl, data, "fee_basis_points"),
+        fee_recipient: read_global_pubkey(idl, data, "fee_recipient"),
+        fee_recipients: read_global_pubkey_array(idl, data, "fee_recipients"),
         withdraw_authority: read_global_pubkey(idl, data, "withdraw_authority"),
         enable_migrate: read_global_bool(idl, data, "enable_migrate"),
         pool_migration_fee: read_global_u64(idl, data, "pool_migration_fee"),
@@ -1115,6 +1165,24 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     assert_eq!(configured_global.owner, pump_id);
     assert!(runtime_rent.is_exempt(configured_global.lamports, configured_global.data.len()));
     let configured_global_state = read_pump_global(&idl, &configured_global.data);
+    let expected_fee_recipient_keys = PUMP_NORMAL_FEE_RECIPIENTS
+        .iter()
+        .map(|address| Pubkey::from_str(address).expect("pinned normal fee recipient address"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        expected_fee_recipient_keys.len(),
+        8,
+        "the pinned Global has one fee_recipient plus seven fee_recipients"
+    );
+    assert_eq!(
+        configured_global_state.fee_recipient, expected_fee_recipient_keys[0],
+        "Pump SetParams must store documented recipient #0 in Global.fee_recipient"
+    );
+    assert_eq!(
+        configured_global_state.fee_recipients.as_slice(),
+        &expected_fee_recipient_keys[1..],
+        "Pump SetParams must store documented recipients #1-#7 in Global.fee_recipients"
+    );
     assert!(configured_global_state.initialized);
     assert_eq!(configured_global_state.authority, context.payer.pubkey());
     assert_eq!(
@@ -1166,6 +1234,14 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         "initial_virtual_sol_reserves": configured_global_state.initial_virtual_sol_reserves,
         "initial_real_token_reserves": configured_global_state.initial_real_token_reserves,
         "creator_fee_basis_points": configured_global_state.creator_fee_basis_points
+    });
+    evidence["global_fee_recipients_set_by_pump_sbf"] = json!({
+        "fee_recipient": configured_global_state.fee_recipient.to_string(),
+        "fee_recipients": configured_global_state
+            .fee_recipients
+            .iter()
+            .map(|recipient| recipient.to_string())
+            .collect::<Vec<_>>()
     });
     fs::write(
         &evidence_file,
