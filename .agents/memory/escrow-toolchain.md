@@ -38,3 +38,9 @@ System-owned, zero-data escrow PDAs are subject to Solana's rent-state transitio
 **Why:** unsolicited deposits can create rent dust; Agave rejects a rent-exempt-to-rent-paying transition. Sweeping the dust to the claimant would violate the exact-refund policy, and silently charging the claimant to fund rent is not approved.
 
 **How to apply:** test atomic rollback on runtime rent failure as well as insufficient funds. Treat a rent reserve/funding strategy as a separate settlement-design decision before real funds; keep contribution refunds, receipt rent, and unsolicited vault deposits distinct.
+
+Published Pump SDK bundles and the latest public documentation can contain different IDLs. Keep test binaries and their IDLs from the same checksum-pinned release; do not treat a published fixture as proof of equality with a deployed program.
+
+**Why:** research found that pump-rust-client 0.4.1 bundles real SBF artifacts, but its Pump Fees IDL lacks the additional referral-withdraw instruction present in the public documentation snapshot.
+
+**How to apply:** verify the package and individual artifact hashes before using them, distinguish fixture execution from deployment equivalence, and check any later IDL refresh against the chosen executable rather than replacing IDLs independently.

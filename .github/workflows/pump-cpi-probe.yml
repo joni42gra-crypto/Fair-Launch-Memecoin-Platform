@@ -1,0 +1,91 @@
+name: Pump SBF binary smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "onchain/pump-cpi-lab/**"
+      - "onchain/test-client/check-io-uring.py"
+      - ".github/workflows/pump-cpi-probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pump-sbf-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pump-sbf-smoke:
+    name: Real Pump SBF on Agave 3.1.10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: onchain/pump-cpi-lab
+    env:
+      RUSTUP_TOOLCHAIN: "1.89.0"
+      PUMP_LAB_CACHE_DIR: ${{ runner.temp }}/pump-sbf-smoke-0.4.1
+      PUMP_LAB_EVIDENCE_DIR: ${{ runner.temp }}/pump-sbf-evidence
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUST_BACKTRACE: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check io_uring before build or runtime startup
+        run: |
+          set -euo pipefail
+          mkdir -p "$PUMP_LAB_EVIDENCE_DIR"
+          python3 ../test-client/check-io-uring.py 2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/preflight.log"
+
+      - name: Select host Rust 1.89.0
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.89.0 --profile minimal --component rustfmt
+          rustup default 1.89.0
+          rustc --version
+          cargo --version
+          rustup show active-toolchain
+          rustup show active-toolchain | grep -q '^1\.89\.0\([ -]\|$\)'
+
+      - name: Cache host compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            onchain/pump-cpi-lab/target
+          key: pump-smoke-ubuntu24-rust189-agave3110-${{ hashFiles('onchain/pump-cpi-lab/Cargo.lock') }}
+
+      - name: Verify configuration, toolchain and formatting
+        run: |
+          set -euo pipefail
+          python3 scripts/lab.py verify-config
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -v
+          cargo fmt --all -- --check
+          cargo metadata --locked --no-deps --format-version 1 > "$PUMP_LAB_EVIDENCE_DIR/cargo-metadata.json"
+          cp fixtures/manifest.json "$PUMP_LAB_EVIDENCE_DIR/manifest.json"
+
+      - name: Prepare only checksum-verified Pump artifacts
+        run: |
+          set -euo pipefail
+          python3 scripts/lab.py prepare 2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/artifacts.log"
+
+      - name: Execute the real SBF dispatcher smoke test
+        run: |
+          set -euo pipefail
+          cargo test --locked --test binary_smoke -- --nocapture --test-threads=1 \
+            2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/runtime.log"
+
+      - name: Preserve evidence including exact failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pump-sbf-smoke-${{ github.sha }}
+          path: ${{ runner.temp }}/pump-sbf-evidence
+          if-no-files-found: warn
+          retention-days: 14

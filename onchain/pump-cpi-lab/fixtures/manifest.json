@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "package": {
+    "name": "pump-rust-client",
+    "version": "0.4.1",
+    "url": "https://static.crates.io/crates/pump-rust-client/pump-rust-client-0.4.1.crate",
+    "sha256": "7179a636f9c52b2447a39b13216b9832141a8557c958f27e66b78582b9efbe19",
+    "size_bytes": 2165822
+  },
+  "runtime": {
+    "host_rust": "1.89.0",
+    "agave_program_test": "3.1.10",
+    "agave_feature_set": "3.1.10",
+    "feature_policy": "all_features_known_to_agave_3.1.10",
+    "deactivated_features": [],
+    "custom_compute_budget": false,
+    "production_feature_parity_verified": false
+  },
+  "programs": [
+    {
+      "name": "pump",
+      "archive_path": "pump-rust-client-0.4.1/artifacts/pump.so",
+      "sha256": "692b19d0242b906d73764c41d30f7b61816c1c6f30a0164e09a20adf9578c092",
+      "size_bytes": 1899448,
+      "program_id": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+      "purpose": "Execute the actual SBF entrypoint with an unknown discriminator; require Anchor InstructionFallbackNotFound (101).",
+      "idl_archive_path": "pump-rust-client-0.4.1/idls/pump.json",
+      "idl_sha256": "7616681ea557975f9f623ac211080f22a93060781eaf4765b0a488d980997207"
+    }
+  ],
+  "smoke": {
+    "discriminator_hex": "ffffffffffffffff",
+    "expected_custom_error": 101,
+    "expected_anchor_error": "InstructionFallbackNotFound",
+    "account_count": 0,
+    "cpi_implemented": false,
+    "token_creation_tested": false,
+    "creator_fees_tested": false
+  },
+  "provenance": {
+    "source": "Published pump-rust-client 0.4.1 crate; package checksum verified against crates.io registry during research.",
+    "deployed_program_equivalence_verified": false,
+    "binary_build_compiler_verified": false
+  }
+}

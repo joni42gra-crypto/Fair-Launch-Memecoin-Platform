@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+
+[package]
+name = "pump-cpi-lab"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+publish = false
+
+[dev-dependencies]
+agave-feature-set = { version = "=3.1.10", features = ["agave-unstable-api"] }
+serde_json = "=1.0.154"
+sha2 = "=0.10.9"
+solana-instruction = "=3.0.0"
+solana-program-test = { version = "=3.1.10", features = ["agave-unstable-api"] }
+solana-pubkey = "=3.0.0"
+solana-sdk-ids = "=3.1.0"
+solana-signer = "=3.0.0"
+solana-transaction = "=3.0.2"
+solana-transaction-error = "=3.4.0"
+tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread"] }
