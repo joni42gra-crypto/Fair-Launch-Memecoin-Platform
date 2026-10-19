@@ -97,7 +97,7 @@ def verify_config():
         and create_v2["mayhem_mode"] is False
         and create_v2["transaction_compute_unit_limit"] == 400_000
         and create_v2["global_state_source"]
-        == "actual pinned Pump SBF initialize instruction executed in ProgramTest"
+        == "actual pinned Pump SBF initialize and set_params instructions executed in ProgramTest"
         and create_v2["create_v2_enablement"]
         == "actual pinned Pump SBF toggle_create_v2 instruction executed in ProgramTest"
         and create_v2["setup_instructions"]
@@ -105,6 +105,10 @@ def verify_config():
             {
                 "instruction": "initialize",
                 "discriminator_hex": "afaf6d1f0d989bed",
+            },
+            {
+                "instruction": "set_params",
+                "discriminator_hex": "1beab2349302bb8d",
             },
             {
                 "instruction": "toggle_create_v2",
