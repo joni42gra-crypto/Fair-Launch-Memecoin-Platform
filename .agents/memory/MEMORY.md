@@ -1,3 +1,4 @@
 - [Launchpad scope](launchpad-scope.md) — preserve app behavior; keep demos non-real and successful Devnet funds locked pending an approved settlement policy.
 - [Pump.fun pair catalog](pump-pair-catalog.md) — use the published docs snapshot; catalog membership is not compatibility verification.
 - [Local escrow toolchain](escrow-toolchain.md) — keep tools under ignored workspace `.local/share`; Agave's validator needs io_uring, unavailable on the current host.
+- [GitHub push authentication](github-push-auth.md) — verify workspace binding and actual CLI auth before claiming a push; a connection notice alone does not prove remote access.
