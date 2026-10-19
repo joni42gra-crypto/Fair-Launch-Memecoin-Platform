@@ -268,6 +268,124 @@ pub mod launchpad_escrow {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn contribute_v2(
+        ctx: Context<ContributeV2>,
+        quoted_price: i64,
+        quoted_confidence: u64,
+        quoted_exponent: i32,
+        quoted_publish_time: i64,
+        quote_expires_at: i64,
+        expected_lamports: u64,
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let campaign = &mut ctx.accounts.campaign;
+
+        require!(
+            campaign.status == CampaignStatus::Open,
+            EscrowError::CampaignNotOpen
+        );
+        require!(now < campaign.ends_at, EscrowError::CampaignExpired);
+        let next_participant_count = campaign
+            .participant_count
+            .checked_add(1)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        require!(
+            campaign.participant_count < campaign.target_participants,
+            EscrowError::CampaignFull
+        );
+        require!(
+            quote_expires_at > now && quote_expires_at <= now.saturating_add(MAX_QUOTE_TTL_SECONDS),
+            EscrowError::QuoteExpired
+        );
+
+        let feed_id = get_feed_id_from_hex(SOL_USD_FEED_ID)
+            .map_err(|_| error!(EscrowError::InvalidPriceFeed))?;
+        let price = ctx.accounts.price_update.get_price_no_older_than(
+            &Clock::get()?,
+            MAX_PYTH_PRICE_AGE_SECONDS,
+            &feed_id,
+        )?;
+
+        require!(
+            price.price == quoted_price
+                && price.conf == quoted_confidence
+                && price.exponent == quoted_exponent
+                && price.publish_time == quoted_publish_time,
+            EscrowError::QuoteDoesNotMatchPyth
+        );
+        require!(price.price > 0, EscrowError::InvalidPrice);
+        require!(
+            price.publish_time <= now.saturating_add(5),
+            EscrowError::InvalidPrice
+        );
+        require!(
+            confidence_is_acceptable(price.price as u64, price.conf),
+            EscrowError::PriceConfidenceTooWide
+        );
+
+        let amount = calculate_required_lamports(
+            campaign.contribution_usd_cents,
+            price.price,
+            price.exponent,
+        )
+        .map_err(|_| error!(EscrowError::InvalidPrice))?;
+        require!(
+            amount == expected_lamports,
+            EscrowError::IncorrectV2LamportAmount
+        );
+
+        require!(
+            next_participant_count <= campaign.target_participants,
+            EscrowError::CampaignFull
+        );
+        let next_total_lamports = campaign
+            .total_lamports
+            .checked_add(amount)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        let campaign_key = campaign.key();
+        let contributor_key = ctx.accounts.contributor.key();
+        let transfer_accounts = Transfer {
+            from: ctx.accounts.contributor.to_account_info(),
+            to: ctx.accounts.vault.to_account_info(),
+        };
+        system_program::transfer(
+            CpiContext::new(ctx.accounts.system_program.key(), transfer_accounts),
+            amount,
+        )?;
+
+        let participant = &mut ctx.accounts.participant;
+        participant.campaign = campaign_key;
+        participant.wallet = contributor_key;
+        participant.amount_lamports = amount;
+        participant.price = price.price;
+        participant.confidence = price.conf;
+        participant.exponent = price.exponent;
+        participant.publish_time = price.publish_time;
+        participant.quote_expires_at = quote_expires_at;
+        participant.joined_at = now;
+        participant.bump = ctx.bumps.participant;
+
+        campaign.participant_count = next_participant_count;
+        campaign.total_lamports = next_total_lamports;
+        if next_participant_count == campaign.target_participants {
+            campaign.status = CampaignStatus::Successful;
+        }
+
+        emit!(ContributionRecorded {
+            campaign: campaign_key,
+            wallet: contributor_key,
+            amount_lamports: amount,
+            price: price.price,
+            confidence: price.conf,
+            exponent: price.exponent,
+            publish_time: price.publish_time,
+            joined_at: now,
+        });
+        Ok(())
+    }
+
     pub fn finalize_failure(ctx: Context<FinalizeFailure>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let campaign = &mut ctx.accounts.campaign;
@@ -405,6 +523,40 @@ pub struct Contribute<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ContributeV2<'info> {
+    #[account(mut)]
+    pub contributor: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [
+            b"campaign_v2",
+            campaign.creator.as_ref(),
+            campaign.campaign_id.to_le_bytes().as_ref()
+        ],
+        bump = campaign.bump
+    )]
+    pub campaign: Account<'info, CampaignV2>,
+    #[account(
+        init,
+        payer = contributor,
+        space = ParticipantV2::SPACE,
+        seeds = [b"participant_v2", campaign.key().as_ref(), contributor.key().as_ref()],
+        bump
+    )]
+    pub participant: Account<'info, ParticipantV2>,
+    /// CHECK: This is a campaign-specific V2 PDA and must remain System Program-owned.
+    #[account(
+        mut,
+        seeds = [b"vault_v2", campaign.key().as_ref()],
+        bump,
+        constraint = vault.owner == &system_program::ID @ EscrowError::InvalidVaultOwner
+    )]
+    pub vault: UncheckedAccount<'info>,
+    pub price_update: Account<'info, PriceUpdateV2>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct FinalizeFailure<'info> {
     pub caller: Signer<'info>,
     #[account(mut)]
@@ -511,6 +663,24 @@ impl Participant {
     pub const SPACE: usize = 8 + 32 + 32 + 8 + 8 + 8 + 4 + 8 + 8 + 8 + 1;
 }
 
+#[account]
+pub struct ParticipantV2 {
+    pub campaign: Pubkey,
+    pub wallet: Pubkey,
+    pub amount_lamports: u64,
+    pub price: i64,
+    pub confidence: u64,
+    pub exponent: i32,
+    pub publish_time: i64,
+    pub quote_expires_at: i64,
+    pub joined_at: i64,
+    pub bump: u8,
+}
+
+impl ParticipantV2 {
+    pub const SPACE: usize = 8 + 32 + 32 + 8 + 8 + 8 + 4 + 8 + 8 + 8 + 1;
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum CampaignStatus {
     Open,
@@ -581,6 +751,8 @@ pub enum EscrowError {
     CampaignGoalOverflow,
     #[msg("Campaign deadline calculation overflowed.")]
     CampaignDeadlineOverflow,
+    #[msg("The amount does not equal the V2 campaign contribution calculated from Pyth.")]
+    IncorrectV2LamportAmount,
 }
 
 #[derive(Debug, PartialEq, Eq)]

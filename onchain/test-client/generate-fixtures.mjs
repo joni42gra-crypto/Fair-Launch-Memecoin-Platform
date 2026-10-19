@@ -118,6 +118,9 @@ const accounts = {
   tooFarInFuture: await writeFixture("future-price", {
     publishTime: now + 120n,
   }),
+  invalidExponent: await writeFixture("invalid-exponent", {
+    exponent: 13,
+  }),
   wrongOwner: await writeFixture("wrong-owner", {
     owner: SYSTEM_PROGRAM_ID,
   }),
