@@ -75,15 +75,15 @@ jobs:
           cargo metadata --locked --no-deps --format-version 1 > "$PUMP_LAB_EVIDENCE_DIR/cargo-metadata.json"
           cp fixtures/manifest.json "$PUMP_LAB_EVIDENCE_DIR/manifest.json"
 
-      - name: Prepare only checksum-verified Pump artifacts
+      - name: Prepare only checksum-verified Pump and Mayhem artifacts
         run: |
           set -euo pipefail
           python3 scripts/lab.py prepare 2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/artifacts.log"
 
-      - name: Execute real Pump SBF dispatcher and PDA CPI tests
+      - name: Execute real Pump SBF dispatcher, CPI and create_v2 tests
         run: |
           set -euo pipefail
-          cargo test --locked --test binary_smoke --test pump_cpi_probe -- --nocapture --test-threads=1 \
+          cargo test --locked --test binary_smoke --test pump_cpi_probe --test pump_create_v2 -- --nocapture --test-threads=1 \
             2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/runtime.log"
 
       - name: Preserve evidence including exact failures

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "package": {
     "name": "pump-rust-client",
     "version": "0.4.1",
@@ -23,9 +23,19 @@
       "sha256": "692b19d0242b906d73764c41d30f7b61816c1c6f30a0164e09a20adf9578c092",
       "size_bytes": 1899448,
       "program_id": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
-      "purpose": "Execute the actual SBF entrypoint with an unknown discriminator; require Anchor InstructionFallbackNotFound (101).",
+      "purpose": "Execute the real Pump SBF dispatcher, fixed-PDA CPI, and create_v2 in isolated ProgramTest.",
       "idl_archive_path": "pump-rust-client-0.4.1/idls/pump.json",
       "idl_sha256": "7616681ea557975f9f623ac211080f22a93060781eaf4765b0a488d980997207"
+    }
+  ],
+  "support_programs": [
+    {
+      "name": "mayhem_program",
+      "archive_path": "pump-rust-client-0.4.1/artifacts/mayhem_program.so",
+      "sha256": "cc8a5a79f3e38a5014960ae9ba06d70ee1fe3966b8e804b43671c146fc3e014b",
+      "size_bytes": 676720,
+      "program_id": "MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e",
+      "purpose": "Pinned executable account required by the create_v2 account context; mayhem mode remains disabled."
     }
   ],
   "smoke": {
@@ -35,6 +45,28 @@
     "account_count": 0,
     "cpi_implemented": false,
     "token_creation_tested": false,
+    "creator_fees_tested": false
+  },
+  "create_v2": {
+    "instruction": "create_v2",
+    "discriminator_hex": "d6904cec5f8b31b4",
+    "creator_is_probe_program_pda": true,
+    "global_state_source": "actual pinned Pump SBF initialize instruction executed in ProgramTest",
+    "create_v2_enablement": "actual pinned Pump SBF toggle_create_v2 instruction executed in ProgramTest",
+    "setup_instructions": [
+      {
+        "instruction": "initialize",
+        "discriminator_hex": "afaf6d1f0d989bed"
+      },
+      {
+        "instruction": "toggle_create_v2",
+        "discriminator_hex": "1cffe6f0ac6bcbab"
+      }
+    ],
+    "mayhem_mode": false,
+    "transaction_compute_unit_limit": 400000,
+    "buy_tested": false,
+    "migration_tested": false,
     "creator_fees_tested": false
   },
   "provenance": {

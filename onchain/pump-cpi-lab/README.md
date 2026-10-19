@@ -1,4 +1,4 @@
-# Stage 4A.2 — real Pump SBF dispatcher and fixed-PDA CPI tests
+# Stage 4A.3 — real Pump SBF create_v2 test
 
 This independent Cargo workspace does **not** integrate Pump into Launchpad.
 No changes to escrow sources, dependencies, its Cargo.lock, Anchor.toml, IDs,
@@ -6,10 +6,16 @@ refunds, or the existing escrow workflow are required.
 
 ## What is executed
 
-Only the checksum-pinned `pump.so` from the published `pump-rust-client 0.4.1`
-crate is loaded as the Pump program. No native Pump processor is supplied.
-ProgramTest's System Program remains its normal builtin. PumpSwap, Pump Fees,
-Mayhem and other packaged binaries are **not** loaded.
+The checksum-pinned `pump.so` from the published `pump-rust-client 0.4.1`
+crate is loaded as the Pump program. No native Pump processor is supplied. The
+existing dispatcher and accumulator-CPI tests remain. The new `create_v2` test
+also loads the checksum-pinned Mayhem SBF from that same crate because its
+program account appears in Pump's pinned `create_v2` IDL.
+
+The test registers the Token-2022 10.0.0 and Associated Token Account 8.0.0
+processors as native ProgramTest programs. Those are only support processors
+for the mint and associated-account CPIs; the Pump program itself is always the
+real pinned SBF. No Metaplex program is needed by this `create_v2` IDL layout.
 
 The existing `binary_smoke` test sends eight `0xff` bytes, not matching any
 instruction discriminator in the pinned IDL. It still requires all of:
@@ -50,10 +56,20 @@ for this one Pump accumulator; no external funds or RPC are involved. This
 creates a disposable Pump state account only in the isolated in-process bank.
 It does not create or buy a token.
 
+The `pump_create_v2` test submits the pinned `create_v2` instruction through a
+fixed native probe. Both the creator/payer and mint are PDAs derived by the
+probe; its CPI signs for them with `invoke_signed`. The test verifies the
+instruction discriminator and account layout against the same pinned IDL,
+checks the real Pump SBF hash at runtime, and checks the created mint, bonding
+curve, Token-2022 metadata, and curve token account. It first executes Pump's
+own `initialize` and `toggle_create_v2` instructions in the isolated
+ProgramTest bank, so Global state is created by the pinned Pump SBF rather than
+hand-constructed fixture data. Mayhem mode is false.
+
 The probe itself is a native ProgramTest processor, not a compiled Launchpad
-SBF program. This verifies runtime CPI/PDA signer behavior against the real Pump
-SBF binary; it does not prove the Launchpad escrow program has an integration
-handler or that Pump behaves identically on a cluster.
+SBF program. The test therefore verifies the real Pump SBF's behavior when
+called by a program-signed PDA, not an integration handler in the Launchpad
+escrow program or behavior on a cluster.
 
 ## Pinned environment and feature policy
 
@@ -62,12 +78,16 @@ handler or that Pump behaves identically on a cluster.
 * Runtime features: **all features known to that pinned Agave version**, with
   no deactivations; the complete sorted ID/name list and its SHA-256 are emitted
   to `pump-smoke.json`. This is **not** a claim of production feature parity.
-* No custom compute budget, CPI depth, account-lock, or loaded-data limits.
+* ProgramTest runtime limits (compute maximum, CPI depth, account locks, loaded
+  data) are not overridden. The create transaction includes the 400,000-unit
+  Compute Budget instruction used by the pinned SDK's create_v2 integration
+  example; this is a transaction instruction, not a replacement runtime.
 * No Anchor program is built in this stage. The existing Anchor 1.0.2,
   Agave CLI 3.1.10 and platform-tools v1.52 remain untouched. This stage does not
   claim to verify the compiler that originally built the published Pump binary.
 
-The manifest pins package, executable, IDL, expected Program ID and scope.
+The manifest pins the package, Pump and Mayhem executables, Pump IDL, expected
+Program IDs, and test scope.
 Package verification happens **before** opening its archive; executable and IDL
 verification happen **before** writing them into the external temporary cache.
 The archive is never extracted wholesale, and unrelated files/keys are never
@@ -85,6 +105,7 @@ python3 scripts/lab.py verify-config
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 scripts/lab.py prepare
 cargo test --locked --test binary_smoke --test pump_cpi_probe --no-run
+cargo test --locked --test pump_create_v2 --no-run
 ```
 
 Python 3.11+ is required (`tomllib`); no third-party Python packages are used.
@@ -114,7 +135,8 @@ The job uses Ubuntu 24.04, runs the unchanged io_uring preflight before build,
 selects host Rust explicitly, verifies the locked configuration, downloads and
 checks artifacts, then runs the test. A failed command stops the job; evidence
 upload uses `always()` but does not convert a failed test into success.
-Logs and `pump-smoke.json` are saved as a GitHub Actions artifact.
+Logs, `pump-smoke.json`, and `pump-create-v2.json` are saved as a GitHub
+Actions artifact.
 
 **Existing workflow interaction:** the unchanged escrow workflow matches
 `onchain/**` on push. A future push of this directory can therefore also trigger
@@ -130,14 +152,13 @@ not Solana RPC; the runtime uses in-process BanksClient.
 Published binary provenance is not a proof of equality with currently deployed
 Devnet/Mainnet programs. Initial ELF inspection is not a runtime pass.
 
-This stage confirms one successful Pump instruction reached via a fixed PDA
-signer in an isolated ProgramTest bank. It does not test token creation, trading,
-migration, Creator Fees, escrow settlement, rewards, or the Launchpad escrow
-program. The Launchpad ID `DqZiBhjX49fyGPL3RkTw2PJeuo9aASPCrPcnaw485Zod`
-remains unloaded and unused. No deployment, Devnet/Mainnet RPC, or real
-transaction is performed.
+This stage is intended to confirm `create_v2` against the pinned Pump SBF in an
+isolated in-process bank. It does not test buying, migration to PumpSwap,
+Creator Fees, escrow settlement, rewards, or the Launchpad escrow program. The
+Launchpad ID `DqZiBhjX49fyGPL3RkTw2PJeuo9aASPCrPcnaw485Zod` remains unloaded and
+unused. No deployment, Devnet/Mainnet RPC, or real transaction is performed.
 
-Do not expand the probe to PumpSwap/Pump Fees, token creation, trading,
-settlement, or fee distribution without a separately reviewed stage.
+Do not add buying, settlement, or fee distribution without a separately
+reviewed stage and a green runtime result for this one.
 
 Source: <https://docs.rs/crate/pump-rust-client/0.4.1/source/artifacts/>
