@@ -25,7 +25,7 @@ const USER_VOLUME_ACCUMULATOR_SEED: &[u8] = b"user_volume_accumulator";
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const INIT_USER_VOLUME_ACCUMULATOR_DISCRIMINATOR: [u8; 8] = [94, 6, 202, 115, 255, 96, 232, 183];
 const USER_VOLUME_ACCUMULATOR_DISCRIMINATOR: [u8; 8] = [86, 255, 112, 14, 102, 53, 154, 250];
-const USER_VOLUME_ACCUMULATOR_SIZE: usize = 106;
+const USER_VOLUME_ACCUMULATOR_SIZE: usize = 137;
 const INIT_ACCOUNT_LAYOUT: [(&str, bool, bool); 6] = [
     ("payer", true, true),
     ("user", false, false),
@@ -254,7 +254,7 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
         Pubkey::find_program_address(&[USER_VOLUME_ACCUMULATOR_SEED, user_pda.as_ref()], &pump_id)
             .0;
     let event_authority = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &pump_id).0;
-    let rent_lamports = Rent::default().minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
+    let payer_rent_budget = Rent::default().minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
     let mut evidence = json!({
         "stage": "before_bank_start",
         "pump_program_id": pump_id.to_string(),
@@ -289,7 +289,7 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
     test.add_program("pump", pump_id, None);
 
     let system_program_id = solana_sdk_ids::system_program::id();
-    let payer_initial_lamports = rent_lamports
+    let payer_initial_lamports = payer_rent_budget
         .checked_add(1)
         .expect("test payer balance does not overflow");
     test.add_account(
@@ -314,6 +314,19 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
     );
 
     let context = test.start_with_context().await;
+    let rent_lamports = context
+        .banks_client
+        .get_rent()
+        .await
+        .expect("ProgramTest runtime Rent sysvar must be available")
+        .minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
+    assert_eq!(
+        payer_initial_lamports,
+        rent_lamports
+            .checked_add(1)
+            .expect("runtime payer balance does not overflow"),
+        "payer must be funded for the actual ProgramTest runtime rent"
+    );
     let loaded_pump = context
         .banks_client
         .get_account(pump_id)
