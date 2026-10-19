@@ -13,6 +13,90 @@ pub const MAX_PYTH_PRICE_AGE_SECONDS: u64 = 30;
 pub const MAX_QUOTE_TTL_SECONDS: i64 = 20;
 pub const MAX_CONFIDENCE_BPS: u64 = 100; // 1% of the integer Pyth price.
 
+pub const MIN_CAMPAIGN_CONTRIBUTION_USD_CENTS: u64 = 1_000;
+pub const MAX_CAMPAIGN_CONTRIBUTION_USD_CENTS: u64 = 10_000;
+pub const MIN_CAMPAIGN_TARGET_PARTICIPANTS: u8 = 2;
+pub const MIN_CAMPAIGN_DURATION_MINUTES: u16 = 10;
+pub const MAX_CAMPAIGN_DURATION_MINUTES: u16 = 60;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CampaignDuration {
+    Minutes(u16),
+    NoDeadline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CampaignParameters {
+    pub contribution_usd_cents: u64,
+    pub target_participants: u8,
+    pub duration: CampaignDuration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ValidatedCampaignParameters {
+    pub contribution_usd_cents: u64,
+    pub target_participants: u8,
+    pub duration_minutes: u16,
+    pub target_usd_cents: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CampaignParameterError {
+    ContributionOutOfRange,
+    ParticipantCountOutOfRange,
+    DurationOutOfRange,
+    NoDeadlineUnsupported,
+    GoalOverflow,
+}
+
+pub fn validate_campaign_parameters(
+    parameters: CampaignParameters,
+) -> std::result::Result<ValidatedCampaignParameters, CampaignParameterError> {
+    if !(MIN_CAMPAIGN_CONTRIBUTION_USD_CENTS..=MAX_CAMPAIGN_CONTRIBUTION_USD_CENTS)
+        .contains(&parameters.contribution_usd_cents)
+    {
+        return Err(CampaignParameterError::ContributionOutOfRange);
+    }
+
+    if !(MIN_CAMPAIGN_TARGET_PARTICIPANTS..=MAX_PARTICIPANTS)
+        .contains(&parameters.target_participants)
+    {
+        return Err(CampaignParameterError::ParticipantCountOutOfRange);
+    }
+
+    let duration_minutes = match parameters.duration {
+        CampaignDuration::Minutes(minutes)
+            if (MIN_CAMPAIGN_DURATION_MINUTES..=MAX_CAMPAIGN_DURATION_MINUTES)
+                .contains(&minutes) =>
+        {
+            minutes
+        }
+        CampaignDuration::Minutes(_) => return Err(CampaignParameterError::DurationOutOfRange),
+        CampaignDuration::NoDeadline => return Err(CampaignParameterError::NoDeadlineUnsupported),
+    };
+
+    let target_usd_cents = calculate_campaign_goal_usd_cents(
+        parameters.contribution_usd_cents,
+        parameters.target_participants,
+    )?;
+
+    Ok(ValidatedCampaignParameters {
+        contribution_usd_cents: parameters.contribution_usd_cents,
+        target_participants: parameters.target_participants,
+        duration_minutes,
+        target_usd_cents,
+    })
+}
+
+fn calculate_campaign_goal_usd_cents(
+    contribution_usd_cents: u64,
+    target_participants: u8,
+) -> std::result::Result<u64, CampaignParameterError> {
+    contribution_usd_cents
+        .checked_mul(u64::from(target_participants))
+        .ok_or(CampaignParameterError::GoalOverflow)
+}
+
 declare_id!("DqZiBhjX49fyGPL3RkTw2PJeuo9aASPCrPcnaw485Zod");
 
 #[program]
@@ -465,6 +549,153 @@ pub fn refund_window_is_open(participants: u8, now: i64, deadline: i64) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn valid_campaign_parameters() -> CampaignParameters {
+        CampaignParameters {
+            contribution_usd_cents: 1_000,
+            target_participants: 2,
+            duration: CampaignDuration::Minutes(10),
+        }
+    }
+
+    #[test]
+    fn validates_minimum_and_maximum_contribution() {
+        let mut parameters = valid_campaign_parameters();
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .contribution_usd_cents,
+            MIN_CAMPAIGN_CONTRIBUTION_USD_CENTS
+        );
+
+        parameters.contribution_usd_cents = MAX_CAMPAIGN_CONTRIBUTION_USD_CENTS;
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .contribution_usd_cents,
+            MAX_CAMPAIGN_CONTRIBUTION_USD_CENTS
+        );
+    }
+
+    #[test]
+    fn rejects_contributions_outside_the_supported_range() {
+        let mut parameters = valid_campaign_parameters();
+        parameters.contribution_usd_cents = MIN_CAMPAIGN_CONTRIBUTION_USD_CENTS - 1;
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::ContributionOutOfRange)
+        );
+
+        parameters.contribution_usd_cents = MAX_CAMPAIGN_CONTRIBUTION_USD_CENTS + 1;
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::ContributionOutOfRange)
+        );
+    }
+
+    #[test]
+    fn validates_minimum_and_maximum_participant_targets() {
+        let mut parameters = valid_campaign_parameters();
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .target_participants,
+            MIN_CAMPAIGN_TARGET_PARTICIPANTS
+        );
+
+        parameters.target_participants = MAX_PARTICIPANTS;
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .target_participants,
+            MAX_PARTICIPANTS
+        );
+    }
+
+    #[test]
+    fn rejects_participant_targets_outside_the_supported_range() {
+        let mut parameters = valid_campaign_parameters();
+        parameters.target_participants = MIN_CAMPAIGN_TARGET_PARTICIPANTS - 1;
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::ParticipantCountOutOfRange)
+        );
+
+        parameters.target_participants = MAX_PARTICIPANTS + 1;
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::ParticipantCountOutOfRange)
+        );
+    }
+
+    #[test]
+    fn validates_minimum_and_maximum_finite_durations() {
+        let mut parameters = valid_campaign_parameters();
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .duration_minutes,
+            MIN_CAMPAIGN_DURATION_MINUTES
+        );
+
+        parameters.duration = CampaignDuration::Minutes(MAX_CAMPAIGN_DURATION_MINUTES);
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .duration_minutes,
+            MAX_CAMPAIGN_DURATION_MINUTES
+        );
+    }
+
+    #[test]
+    fn rejects_finite_durations_outside_the_supported_range() {
+        let mut parameters = valid_campaign_parameters();
+        parameters.duration = CampaignDuration::Minutes(MIN_CAMPAIGN_DURATION_MINUTES - 1);
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::DurationOutOfRange)
+        );
+
+        parameters.duration = CampaignDuration::Minutes(MAX_CAMPAIGN_DURATION_MINUTES + 1);
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::DurationOutOfRange)
+        );
+    }
+
+    #[test]
+    fn rejects_no_deadline_campaigns_in_this_stage() {
+        let mut parameters = valid_campaign_parameters();
+        parameters.duration = CampaignDuration::NoDeadline;
+        assert_eq!(
+            validate_campaign_parameters(parameters),
+            Err(CampaignParameterError::NoDeadlineUnsupported)
+        );
+    }
+
+    #[test]
+    fn calculates_the_usd_goal_from_contribution_and_target() {
+        let parameters = CampaignParameters {
+            contribution_usd_cents: 2_500,
+            target_participants: 20,
+            duration: CampaignDuration::Minutes(30),
+        };
+
+        assert_eq!(
+            validate_campaign_parameters(parameters)
+                .unwrap()
+                .target_usd_cents,
+            50_000
+        );
+    }
+
+    #[test]
+    fn reports_campaign_goal_multiplication_overflow() {
+        assert_eq!(
+            calculate_campaign_goal_usd_cents(u64::MAX, 2),
+            Err(CampaignParameterError::GoalOverflow)
+        );
+    }
 
     #[test]
     fn calculates_exact_ten_dollars_in_lamports() {

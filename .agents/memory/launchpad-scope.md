@@ -36,3 +36,11 @@ Successful campaign contributions remain in the program vault until a separate s
 **Why:** no successful-campaign beneficiary or settlement rule was specified, so the safest prototype does not introduce a custody exit.
 
 **How to apply:** keep failed-campaign refunds limited to each recorded participant, and retain the no-withdrawal rule for successful campaigns until the user approves a reviewed settlement design.
+
+## Indefinite campaign withdrawals
+
+For a campaign without a deadline, each participant may withdraw exactly their own contribution at any time while the campaign remains open; this must not cancel the campaign or affect other participants.
+
+**Why:** the user clarified that in an indefinite campaign each person should be able to take back their own amount at any time.
+
+**How to apply:** design an individual, replay-safe withdrawal path for no-deadline campaigns; keep this separate from finite-deadline failure/refund logic and do not enable the mode until that path is tested.
