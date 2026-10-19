@@ -243,6 +243,12 @@ try {
       },
     },
   );
+  // Rust ProgramTest may take longer than Pyth's 30-second freshness window.
+  // Refresh the synthetic account immediately before this validator loads it.
+  run(process.execPath, ["./generate-fixtures.mjs"], {
+    cwd: here,
+    env: process.env,
+  });
   await rm(ledgerDir, { recursive: true, force: true });
 
   const validatorArgs = [

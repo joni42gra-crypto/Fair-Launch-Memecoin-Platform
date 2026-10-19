@@ -29,6 +29,8 @@ const SOL_USD_PRICE = 10_000_000_000n;
 const SOL_USD_CONFIDENCE = 10_000_000n;
 const SOL_USD_EXPONENT = -8;
 const EXPECTED_LAMPORTS = 100_000_000n;
+const MAX_PYTH_PRICE_AGE_SECONDS = 30n;
+const MAX_PYTH_PRICE_FUTURE_SECONDS = 5n;
 const CAMPAIGN_SPACE = 76;
 const PARTICIPANT_SPACE = 125;
 
@@ -121,6 +123,16 @@ async function clockUnixTimestamp() {
   return clock.data.readBigInt64LE(32);
 }
 
+function assertValidPriceFixtureFreshAt(clockTime) {
+  const publishTime = BigInt(fixtures.valid.publishTime);
+  const age = clockTime - publishTime;
+  assert.ok(
+    age <= MAX_PYTH_PRICE_AGE_SECONDS &&
+      age >= -MAX_PYTH_PRICE_FUTURE_SECONDS,
+    `valid Pyth fixture publish_time ${publishTime} is ${age}s relative to validator Clock ${clockTime}; expected age between -${MAX_PYTH_PRICE_FUTURE_SECONDS}s and ${MAX_PYTH_PRICE_AGE_SECONDS}s`,
+  );
+}
+
 async function sendInstruction(signer, ix) {
   const blockhash = await connection.getLatestBlockhash("confirmed");
   const tx = new Transaction({
@@ -150,6 +162,7 @@ async function sendContributionBatch(campaign, wallets) {
     const batch = wallets.slice(index, index + 12);
     const blockhash = await connection.getLatestBlockhash("confirmed");
     const now = await clockUnixTimestamp();
+    assertValidPriceFixtureFreshAt(now);
     const quoteExpiry = now + 19n;
     const transactions = batch.map((wallet) => {
       const ix = contributeInstruction(wallet, campaign, "valid", {
@@ -211,6 +224,23 @@ async function expectRejected(label, work) {
     error = caught;
   }
   assert.ok(error, `${label}: expected the transaction to be rejected`);
+  return error;
+}
+
+async function expectRejectedWith(label, expected, work) {
+  const error = await expectRejected(label, work);
+  const logs = [
+    ...(Array.isArray(error.logs) ? error.logs : []),
+    ...(Array.isArray(error.transactionError?.logs)
+      ? error.transactionError.logs
+      : []),
+  ];
+  const details = [error.message, ...logs].filter(Boolean).join("\n");
+  assert.match(
+    details,
+    expected,
+    `${label}: transaction failed, but not with the expected error:\n${details}`,
+  );
   return error;
 }
 
@@ -323,6 +353,7 @@ function finalizeFailureInstruction(caller, campaign) {
 
 async function currentContribution(wallet, campaign, fixtureName = "valid", extra = {}) {
   const now = await clockUnixTimestamp();
+  if (fixtureName === "valid") assertValidPriceFixtureFreshAt(now);
   return sendInstruction(
     wallet,
     contributeInstruction(wallet, campaign, fixtureName, {
@@ -335,7 +366,6 @@ async function currentContribution(wallet, campaign, fixtureName = "valid", extr
 async function rejectOracleCases(wallet, campaign) {
   const cases = [
     ["wrong supported feed ID", "wrong-feed", {}],
-    ["stale Pyth publish time", "stale", {}],
     ["partial rather than full verification", "partial", {}],
     ["zero price", "zero-price", {}],
     ["confidence above 1%", "wide-confidence", {}],
@@ -344,6 +374,27 @@ async function rejectOracleCases(wallet, campaign) {
     ["displayed quote differs from Pyth", "valid", { price: SOL_USD_PRICE + 1n }],
     ["incorrect expected lamports", "valid", { expectedLamports: EXPECTED_LAMPORTS + 1n }],
   ];
+
+  const staleQuoteTime = await clockUnixTimestamp();
+  await expectRejectedWith(
+    "stale Pyth publish time",
+    /PriceTooOld|This price feed update's age exceeds the requested maximum age|custom program error: 0x2710/i,
+    () =>
+      sendInstruction(
+        wallet,
+        contributeInstruction(wallet, campaign, "stale", {
+          quoteExpiresAt: staleQuoteTime + 19n,
+        }),
+      ),
+  );
+  assert.equal(
+    await connection.getAccountInfo(
+      participantAddress(campaign, wallet.publicKey),
+      "confirmed",
+    ),
+    null,
+    "stale Pyth publish time: rejected instruction must not leave a participant receipt",
+  );
 
   const now = await clockUnixTimestamp();
   for (const [label, fixture, overrides] of cases) {
