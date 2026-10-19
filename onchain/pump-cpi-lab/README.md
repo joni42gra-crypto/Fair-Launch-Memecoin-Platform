@@ -1,4 +1,4 @@
-# Stage 4A.2 — real Pump SBF binary smoke test
+# Stage 4A.2 — real Pump SBF dispatcher and fixed-PDA CPI tests
 
 This independent Cargo workspace does **not** integrate Pump into Launchpad.
 No changes to escrow sources, dependencies, its Cargo.lock, Anchor.toml, IDs,
@@ -7,13 +7,12 @@ refunds, or the existing escrow workflow are required.
 ## What is executed
 
 Only the checksum-pinned `pump.so` from the published `pump-rust-client 0.4.1`
-crate is added to ProgramTest. No native Pump processor is supplied.
-ProgramTest's bundled System/SPL infrastructure remains unchanged. PumpSwap,
-Pump Fees, Mayhem and other packaged binaries are **not** loaded in this stage:
-the unknown-instruction dispatcher test needs no business accounts or CPI.
+crate is loaded as the Pump program. No native Pump processor is supplied.
+ProgramTest's System Program remains its normal builtin. PumpSwap, Pump Fees,
+Mayhem and other packaged binaries are **not** loaded.
 
-An in-process transaction sends eight `0xff` bytes, not matching any instruction
-discriminator in the pinned IDL. Passing requires all of:
+The existing `binary_smoke` test sends eight `0xff` bytes, not matching any
+instruction discriminator in the pinned IDL. It still requires all of:
 
 1. The executable account contains exactly the pinned SBF bytes, owned by the
    BPF loader.
@@ -27,6 +26,34 @@ This is an intentionally rejected input, **not** a successful create, buy,
 collect, or CPI instruction. No tokens or business accounts are created.
 If this binary returns anything else, the test fails and the evidence is saved.
 Do not broaden the assertion to "any error".
+
+The new `pump_cpi_probe` test registers a separate native ProgramTest processor
+under a test-only Program ID. It constructs the fixed
+`init_user_volume_accumulator` instruction from the checksum-pinned official
+Pump IDL packaged with `pump-rust-client 0.4.1`; the test checks its
+discriminator, account order, and signer/writable roles against that IDL. The
+probe calls `solana_program::program::invoke_signed` with one predetermined payer PDA and
+validates every account address and role. It cannot accept an arbitrary
+instruction, program, recipient, or signer seed.
+
+The probe deliberately does not link `pump-rust-client` into the host test
+binary: that published crate's broad `solana-program >=2.1.21` dependency
+resolves to Solana 5.1 alongside Agave 3.1's Solana 3 instruction types. The
+verified crate remains the source of the pinned binary and IDL; the probe uses
+the exact IDL layout with Agave-compatible CPI types.
+
+The test loads the same checksum-verified Pump SBF binary and requires an actual
+successful nested Pump invocation. It also verifies the created account's Pump
+owner, IDL discriminator, stored user, serialized size, and rent. The payer PDA
+starts with synthetic ProgramTest genesis lamports and only pays the exact rent
+for this one Pump accumulator; no external funds or RPC are involved. This
+creates a disposable Pump state account only in the isolated in-process bank.
+It does not create or buy a token.
+
+The probe itself is a native ProgramTest processor, not a compiled Launchpad
+SBF program. This verifies runtime CPI/PDA signer behavior against the real Pump
+SBF binary; it does not prove the Launchpad escrow program has an integration
+handler or that Pump behaves identically on a cluster.
 
 ## Pinned environment and feature policy
 
@@ -57,7 +84,7 @@ cargo fmt --all -- --check
 python3 scripts/lab.py verify-config
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 scripts/lab.py prepare
-cargo test --locked --test binary_smoke --no-run
+cargo test --locked --test binary_smoke --test pump_cpi_probe --no-run
 ```
 
 Python 3.11+ is required (`tomllib`); no third-party Python packages are used.
@@ -103,14 +130,14 @@ not Solana RPC; the runtime uses in-process BanksClient.
 Published binary provenance is not a proof of equality with currently deployed
 Devnet/Mainnet programs. Initial ELF inspection is not a runtime pass.
 
-This stage confirms neither PDA signatures nor CPI compatibility, creation,
-trading, migration, Creator Fees, escrow settlement, or rewards.
-The Launchpad ID `DqZiBhjX49fyGPL3RkTw2PJeuo9aASPCrPcnaw485Zod`
-is **not loaded or used** in this stage because there is no test probe yet.
-A later, separately approved probe may use it only inside an isolated bank.
-No creator/payer identity assumption is made.
+This stage confirms one successful Pump instruction reached via a fixed PDA
+signer in an isolated ProgramTest bank. It does not test token creation, trading,
+migration, Creator Fees, escrow settlement, rewards, or the Launchpad escrow
+program. The Launchpad ID `DqZiBhjX49fyGPL3RkTw2PJeuo9aASPCrPcnaw485Zod`
+remains unloaded and unused. No deployment, Devnet/Mainnet RPC, or real
+transaction is performed.
 
-Do not add PumpSwap/Pump Fees, a probe, `invoke_signed`, create/buy/collect calls,
-or program deployment until the next stage is approved.
+Do not expand the probe to PumpSwap/Pump Fees, token creation, trading,
+settlement, or fee distribution without a separately reviewed stage.
 
 Source: <https://docs.rs/crate/pump-rust-client/0.4.1/source/artifacts/>

@@ -80,10 +80,10 @@ jobs:
           set -euo pipefail
           python3 scripts/lab.py prepare 2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/artifacts.log"
 
-      - name: Execute the real SBF dispatcher smoke test
+      - name: Execute real Pump SBF dispatcher and PDA CPI tests
         run: |
           set -euo pipefail
-          cargo test --locked --test binary_smoke -- --nocapture --test-threads=1 \
+          cargo test --locked --test binary_smoke --test pump_cpi_probe -- --nocapture --test-threads=1 \
             2>&1 | tee "$PUMP_LAB_EVIDENCE_DIR/runtime.log"
 
       - name: Preserve evidence including exact failures

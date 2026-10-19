@@ -44,3 +44,9 @@ Published Pump SDK bundles and the latest public documentation can contain diffe
 **Why:** research found that pump-rust-client 0.4.1 bundles real SBF artifacts, but its Pump Fees IDL lacks the additional referral-withdraw instruction present in the public documentation snapshot.
 
 **How to apply:** verify the package and individual artifact hashes before using them, distinguish fixture execution from deployment equivalence, and check any later IDL refresh against the chosen executable rather than replacing IDLs independently.
+
+Pump's published Rust client 0.4.1 declares a broad `solana-program >=2.1.21` dependency. Under the current resolver, adding it to an Agave 3.1.10 host test selected Solana 5.1.0 beside the 3.x CPI instruction types.
+
+**Why:** the duplicate major versions recreate the incompatible `Instruction` type problem in a separate CPI lab, even though the actual Pump SBF binary and pinned IDL are usable.
+
+**How to apply:** keep the release-pinned Pump binary and IDL as the test fixture, but construct only reviewed fixed instructions with Agave-compatible 3.x CPI types; do not add the broad SDK dependency to the escrow graph.
