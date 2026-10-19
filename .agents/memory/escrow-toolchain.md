@@ -21,6 +21,12 @@ Agave's SBF builder may invoke Cargo through rustup to read Cargo metadata befor
 
 **How to apply:** in the builder's exact child environment, verify `rustc --version`, `cargo --version`, and `rustup show active-toolchain`, then run locked Cargo metadata before invoking the pinned SBF builder.
 
+Anchor 1.0.2 and Pyth receiver SDK 2.0.0 use the Solana 3 instruction/CPI interface. Pyth's `pythnet-sdk` accepts an extremely broad `solana-program >=1.13.6` range, so an unconstrained lock can select Solana `solana-program` 5.x, whose instruction 4 type is incompatible with the 3.x CPI crate. Pin the transitive `solana-program` to 3.0.0 in the escrow program's normal dependencies; this is independent of host-only ProgramTest dependencies.
+
+**Why:** a fresh SBF build failed inside `solana-program` with a mismatched `Instruction` type, while `cargo tree -e normal,build` showed the cause in the Pyth on-chain graph, not the host ProgramTest graph.
+
+**How to apply:** when changing Anchor/Pyth versions, inspect both `cargo tree -e normal,build` and `cargo tree -e dev`; keep the Pyth SDK's Solana program type generation aligned with Anchor and rebuild the actual SBF target.
+
 Agave 3.1.10's local validator does not expose a `warpSlot` RPC method. Its `--warp-slot` option and `ProgramTestContext::warp_to_slot` advance slots, but `Bank::warp_from_parent` preserves the parent's Unix timestamp. For deadline tests, use `ProgramTestContext::set_sysvar(&Clock)` against the built SBF program; use slot warping only when a fresh blockhash is needed.
 
 **Why:** slot advancement alone does not make a time-based on-chain deadline pass.
