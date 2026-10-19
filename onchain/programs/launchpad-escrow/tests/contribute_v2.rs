@@ -722,6 +722,12 @@ async fn v2_contribution_rejects_invalid_oracle_and_quote_without_side_effects()
 
     let mut mismatched_quote = valid.quote;
     mismatched_quote.price += 1;
+    let mut mismatched_confidence = valid.quote;
+    mismatched_confidence.confidence += 1;
+    let mut mismatched_exponent = valid.quote;
+    mismatched_exponent.exponent += 1;
+    let mut mismatched_publish_time = valid.quote;
+    mismatched_publish_time.publish_time += 1;
     let cases = [
         (
             "wrong Pyth feed ID",
@@ -796,6 +802,30 @@ async fn v2_contribution_rejects_invalid_oracle_and_quote_without_side_effects()
             Some(error_code(EscrowError::QuoteDoesNotMatchPyth)),
         ),
         (
+            "client confidence does not match Pyth",
+            valid,
+            mismatched_confidence,
+            quote_expires_at,
+            expected_amount,
+            Some(error_code(EscrowError::QuoteDoesNotMatchPyth)),
+        ),
+        (
+            "client exponent does not match Pyth",
+            valid,
+            mismatched_exponent,
+            quote_expires_at,
+            expected_amount,
+            Some(error_code(EscrowError::QuoteDoesNotMatchPyth)),
+        ),
+        (
+            "client publish time does not match Pyth",
+            valid,
+            mismatched_publish_time,
+            quote_expires_at,
+            expected_amount,
+            Some(error_code(EscrowError::QuoteDoesNotMatchPyth)),
+        ),
+        (
             "expired client quote",
             valid,
             valid.quote,
@@ -817,6 +847,14 @@ async fn v2_contribution_rejects_invalid_oracle_and_quote_without_side_effects()
             valid.quote,
             quote_expires_at,
             expected_amount + 1,
+            Some(error_code(EscrowError::IncorrectV2LamportAmount)),
+        ),
+        (
+            "client expected lamports are below the on-chain calculation",
+            valid,
+            valid.quote,
+            quote_expires_at,
+            expected_amount - 1,
             Some(error_code(EscrowError::IncorrectV2LamportAmount)),
         ),
     ];
@@ -866,36 +904,22 @@ async fn v2_contribution_checks_deadline_and_rolls_back_insufficient_transfer() 
     );
 
     let mut context = program_test.start_with_context().await;
-    let base_time = valid.quote.publish_time - 3;
-    let quote_expires_at = base_time + TEST_QUOTE_TTL_SECONDS;
+    let campaign_start = valid.quote.publish_time - 599;
+    let deadline = valid.quote.publish_time + 1;
+    let quote_expires_at = valid.quote.publish_time + TEST_QUOTE_TTL_SECONDS;
     let campaign = create_campaign(
         &mut context,
         &creator,
         701,
         MIN_CONTRIBUTION_USD_CENTS,
         2,
-        base_time,
+        campaign_start,
     )
     .await;
-    process_at(
-        &mut context,
-        base_time + 1,
-        contribute_v2_instruction(
-            first_wallet.pubkey(),
-            campaign,
-            valid.address,
-            valid.quote,
-            quote_expires_at,
-            required_lamports,
-        ),
-        &[&first_wallet],
-    )
-    .await
-    .expect("contribution just before the deadline");
 
     assert_failed_attempt_is_atomic(
         &mut context,
-        base_time + 2,
+        valid.quote.publish_time - 1,
         campaign,
         &underfunded_wallet,
         valid.address,
@@ -907,7 +931,22 @@ async fn v2_contribution_checks_deadline_and_rolls_back_insufficient_transfer() 
     )
     .await;
 
-    let deadline = base_time + 10 * 60;
+    process_at(
+        &mut context,
+        deadline - 1,
+        contribute_v2_instruction(
+            first_wallet.pubkey(),
+            campaign,
+            valid.address,
+            valid.quote,
+            quote_expires_at,
+            required_lamports,
+        ),
+        &[&first_wallet],
+    )
+    .await
+    .expect("contribution exactly one second before the deadline");
+
     assert_failed_attempt_is_atomic(
         &mut context,
         deadline,
@@ -936,12 +975,129 @@ async fn v2_contribution_checks_deadline_and_rolls_back_insufficient_transfer() 
     .await;
 }
 
+#[tokio::test]
+async fn v2_contribution_rejects_invalid_saved_campaign_parameters_atomically() {
+    let metadata = load_fixture_metadata();
+    let mut program_test = ProgramTest::new("launchpad_escrow", PROGRAM_ID, None);
+    let valid = add_price_fixture(&mut program_test, &metadata, "valid", "valid");
+    let contributor = Keypair::new();
+    program_test.add_account(contributor.pubkey(), system_account(CONTRIBUTOR_LAMPORTS));
+
+    let campaign_start = valid.quote.publish_time - 3;
+    let cases = [
+        (
+            add_campaign_with_parameters(
+                &mut program_test,
+                Keypair::new().pubkey(),
+                901,
+                0,
+                0,
+                MIN_CONTRIBUTION_USD_CENTS,
+                101,
+                campaign_start,
+            ),
+            EscrowError::InvalidCampaignParticipantTarget,
+            "saved target of 101 participants",
+        ),
+        (
+            add_campaign_with_parameters(
+                &mut program_test,
+                Keypair::new().pubkey(),
+                902,
+                0,
+                0,
+                MIN_CONTRIBUTION_USD_CENTS,
+                u8::MAX,
+                campaign_start,
+            ),
+            EscrowError::InvalidCampaignParticipantTarget,
+            "saved target of 255 participants",
+        ),
+        (
+            add_campaign_with_parameters(
+                &mut program_test,
+                Keypair::new().pubkey(),
+                903,
+                0,
+                0,
+                MIN_CONTRIBUTION_USD_CENTS - 1,
+                2,
+                campaign_start,
+            ),
+            EscrowError::InvalidCampaignContribution,
+            "saved contribution of 999 cents",
+        ),
+        (
+            add_campaign_with_parameters(
+                &mut program_test,
+                Keypair::new().pubkey(),
+                904,
+                0,
+                0,
+                MAX_CONTRIBUTION_USD_CENTS + 1,
+                2,
+                campaign_start,
+            ),
+            EscrowError::InvalidCampaignContribution,
+            "saved contribution of 10,001 cents",
+        ),
+    ];
+
+    let mut context = program_test.start_with_context().await;
+    let now = campaign_start + 1;
+    let quote_expires_at = now + TEST_QUOTE_TTL_SECONDS;
+    let expected_amount = calculate_required_lamports(
+        MIN_CONTRIBUTION_USD_CENTS,
+        valid.quote.price,
+        valid.quote.exponent,
+    )
+    .expect("calculate the valid contribution amount");
+
+    for (campaign, expected_error, label) in cases {
+        assert_failed_attempt_is_atomic(
+            &mut context,
+            now,
+            campaign,
+            &contributor,
+            valid.address,
+            valid.quote,
+            quote_expires_at,
+            expected_amount,
+            Some(error_code(expected_error)),
+            label,
+        )
+        .await;
+    }
+}
+
 fn add_campaign_with_state(
     program_test: &mut ProgramTest,
     creator: Pubkey,
     campaign_id: u64,
     participant_count: u8,
     total_lamports: u64,
+    unix_timestamp: i64,
+) -> Pubkey {
+    add_campaign_with_parameters(
+        program_test,
+        creator,
+        campaign_id,
+        participant_count,
+        total_lamports,
+        MIN_CONTRIBUTION_USD_CENTS,
+        2,
+        unix_timestamp,
+    )
+}
+
+fn add_campaign_with_parameters(
+    program_test: &mut ProgramTest,
+    creator: Pubkey,
+    campaign_id: u64,
+    participant_count: u8,
+    total_lamports: u64,
+    contribution_usd_cents: u64,
+    target_participants: u8,
     unix_timestamp: i64,
 ) -> Pubkey {
     let (address, bump) = campaign_v2_address(creator, campaign_id);
@@ -953,9 +1109,9 @@ fn add_campaign_with_state(
         participant_count,
         total_lamports,
         status: CampaignStatus::Open,
-        contribution_usd_cents: MIN_CONTRIBUTION_USD_CENTS,
-        target_usd_cents: MIN_CONTRIBUTION_USD_CENTS * 2,
-        target_participants: 2,
+        contribution_usd_cents,
+        target_usd_cents: contribution_usd_cents * u64::from(target_participants),
+        target_participants,
         duration_minutes: 10,
         bump,
     };

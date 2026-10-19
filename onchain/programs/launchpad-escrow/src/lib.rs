@@ -282,6 +282,16 @@ pub mod launchpad_escrow {
         let campaign = &mut ctx.accounts.campaign;
 
         require!(
+            (MIN_CAMPAIGN_TARGET_PARTICIPANTS..=MAX_PARTICIPANTS)
+                .contains(&campaign.target_participants),
+            EscrowError::InvalidCampaignParticipantTarget
+        );
+        require!(
+            (MIN_CAMPAIGN_CONTRIBUTION_USD_CENTS..=MAX_CAMPAIGN_CONTRIBUTION_USD_CENTS)
+                .contains(&campaign.contribution_usd_cents),
+            EscrowError::InvalidCampaignContribution
+        );
+        require!(
             campaign.status == CampaignStatus::Open,
             EscrowError::CampaignNotOpen
         );
