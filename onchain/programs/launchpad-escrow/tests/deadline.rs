@@ -1,5 +1,5 @@
 use {
-    anchor_lang::{prelude::Pubkey as AnchorPubkey, AccountDeserialize, AccountSerialize},
+    anchor_lang::AccountDeserialize,
     launchpad_escrow::{Campaign, CampaignStatus, Participant},
     sha2::{Digest, Sha256},
     solana_account::Account,
@@ -14,24 +14,9 @@ use {
 };
 
 const CAMPAIGN_ID: u64 = 71;
-const BASE_TIME: i64 = 1_700_000_000;
-const DEADLINE: i64 = BASE_TIME + 3_600;
 const DEPOSIT_LAMPORTS: u64 = 100_000_000;
-const RECEIPT_RENT_LAMPORTS: u64 = 10_000_000;
 const TEST_WALLET_LAMPORTS: u64 = 5_000_000_000;
 const SYSTEM_PROGRAM_ID: &str = "11111111111111111111111111111111";
-
-fn as_anchor_pubkey(pubkey: Pubkey) -> AnchorPubkey {
-    AnchorPubkey::new_from_array(pubkey.to_bytes())
-}
-
-fn account_data<T: AccountSerialize>(value: &T) -> Vec<u8> {
-    let mut data = Vec::new();
-    value
-        .try_serialize(&mut data)
-        .expect("serialize fixture account");
-    data
-}
 
 fn system_account(lamports: u64) -> Account {
     Account {
@@ -60,7 +45,15 @@ fn anchor_instruction(
     }
 }
 
-fn load_price_fixture(program_test: &mut ProgramTest) -> Pubkey {
+#[derive(Clone, Copy)]
+struct PriceQuote {
+    price: i64,
+    confidence: u64,
+    exponent: i32,
+    publish_time: i64,
+}
+
+fn load_price_fixture(program_test: &mut ProgramTest) -> (Pubkey, PriceQuote) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test-client/fixtures/accounts/valid.json");
     let json: serde_json::Value = serde_json::from_slice(
@@ -81,36 +74,54 @@ fn load_price_fixture(program_test: &mut ProgramTest) -> Pubkey {
     let lamports = account["lamports"].as_u64().expect("fixture lamports");
     let data = account["data"][0].as_str().expect("fixture base64 data");
     program_test.add_account_with_base64_data(address, lamports, owner, data);
-    address
+    let metadata_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test-client/fixtures/addresses.json");
+    let metadata: serde_json::Value = serde_json::from_slice(
+        &fs::read(&metadata_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", metadata_path.display())),
+    )
+    .expect("parse generated fixture metadata");
+    let valid = &metadata["valid"];
+    let quote = PriceQuote {
+        price: valid["price"]
+            .as_str()
+            .expect("fixture price")
+            .parse()
+            .expect("integer fixture price"),
+        confidence: valid["confidence"]
+            .as_str()
+            .expect("fixture confidence")
+            .parse()
+            .expect("integer fixture confidence"),
+        exponent: valid["exponent"]
+            .as_i64()
+            .expect("fixture exponent")
+            .try_into()
+            .expect("i32 fixture exponent"),
+        publish_time: valid["publishTime"]
+            .as_str()
+            .expect("fixture publish time")
+            .parse()
+            .expect("integer fixture publish time"),
+    };
+    (address, quote)
 }
 
-fn campaign_data(creator: Pubkey, campaign_bump: u8) -> Vec<u8> {
-    account_data(&Campaign {
-        creator: as_anchor_pubkey(creator),
-        campaign_id: CAMPAIGN_ID,
-        started_at: BASE_TIME,
-        ends_at: DEADLINE,
-        participant_count: 1,
-        refunded_count: 0,
-        status: CampaignStatus::Open,
-        total_lamports: DEPOSIT_LAMPORTS,
-        bump: campaign_bump,
-    })
-}
-
-fn participant_data(campaign: Pubkey, wallet: Pubkey, participant_bump: u8) -> Vec<u8> {
-    account_data(&Participant {
-        campaign: as_anchor_pubkey(campaign),
-        wallet: as_anchor_pubkey(wallet),
-        amount_lamports: DEPOSIT_LAMPORTS,
-        price: 10_000_000_000,
-        confidence: 10_000_000,
-        exponent: -8,
-        publish_time: BASE_TIME,
-        quote_expires_at: BASE_TIME + 20,
-        joined_at: BASE_TIME,
-        bump: participant_bump,
-    })
+fn start_campaign_instruction(
+    program_id: Pubkey,
+    creator: Pubkey,
+    campaign: Pubkey,
+) -> Instruction {
+    anchor_instruction(
+        program_id,
+        "start_campaign",
+        vec![
+            AccountMeta::new(creator, true),
+            AccountMeta::new(campaign, false),
+            AccountMeta::new_readonly(Pubkey::from_str(SYSTEM_PROGRAM_ID).unwrap(), false),
+        ],
+        &CAMPAIGN_ID.to_le_bytes(),
+    )
 }
 
 fn finalize_failure_instruction(
@@ -150,20 +161,22 @@ fn claim_refund_instruction(
     )
 }
 
-fn late_contribution_instruction(
+fn contribution_instruction(
     program_id: Pubkey,
     contributor: Pubkey,
     campaign: Pubkey,
     participant: Pubkey,
     vault: Pubkey,
     price_update: Pubkey,
+    quote: PriceQuote,
+    quote_expires_at: i64,
 ) -> Instruction {
     let mut args = Vec::with_capacity(36);
-    args.extend_from_slice(&10_000_000_000_i64.to_le_bytes());
-    args.extend_from_slice(&10_000_000_u64.to_le_bytes());
-    args.extend_from_slice(&(-8_i32).to_le_bytes());
-    args.extend_from_slice(&BASE_TIME.to_le_bytes());
-    args.extend_from_slice(&(DEADLINE + 10).to_le_bytes());
+    args.extend_from_slice(&quote.price.to_le_bytes());
+    args.extend_from_slice(&quote.confidence.to_le_bytes());
+    args.extend_from_slice(&quote.exponent.to_le_bytes());
+    args.extend_from_slice(&quote.publish_time.to_le_bytes());
+    args.extend_from_slice(&quote_expires_at.to_le_bytes());
     args.extend_from_slice(&DEPOSIT_LAMPORTS.to_le_bytes());
     anchor_instruction(
         program_id,
@@ -221,16 +234,15 @@ async fn assert_rejected_at(
 #[tokio::test]
 async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
     let program_id = Pubkey::new_from_array(launchpad_escrow::ID.to_bytes());
-    let system_program = Pubkey::from_str(SYSTEM_PROGRAM_ID).unwrap();
     let wallet = Keypair::new();
     let late_contributor = Keypair::new();
     let attacker = Keypair::new();
     let campaign_id = CAMPAIGN_ID.to_le_bytes();
-    let (campaign, campaign_bump) = Pubkey::find_program_address(
+    let (campaign, _) = Pubkey::find_program_address(
         &[b"campaign", wallet.pubkey().as_ref(), &campaign_id],
         &program_id,
     );
-    let (participant, participant_bump) = Pubkey::find_program_address(
+    let (participant, _) = Pubkey::find_program_address(
         &[b"participant", campaign.as_ref(), wallet.pubkey().as_ref()],
         &program_id,
     );
@@ -251,43 +263,57 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
         system_account(TEST_WALLET_LAMPORTS),
     );
     program_test.add_account(attacker.pubkey(), system_account(TEST_WALLET_LAMPORTS));
-    program_test.add_account(
-        campaign,
-        Account {
-            lamports: RECEIPT_RENT_LAMPORTS,
-            data: campaign_data(wallet.pubkey(), campaign_bump),
-            owner: program_id,
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-    program_test.add_account(
-        participant,
-        Account {
-            lamports: RECEIPT_RENT_LAMPORTS,
-            data: participant_data(campaign, wallet.pubkey(), participant_bump),
-            owner: program_id,
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-    program_test.add_account(
-        vault,
-        Account {
-            lamports: DEPOSIT_LAMPORTS,
-            data: Vec::new(),
-            owner: system_program,
-            executable: false,
-            rent_epoch: 0,
-        },
-    );
-    let price_update = load_price_fixture(&mut program_test);
+    let (price_update, quote) = load_price_fixture(&mut program_test);
+    let base_time = quote.publish_time;
+    let deadline = base_time + 3_600;
+    let quote_expires_at = base_time + 20;
     let mut context = program_test.start_with_context().await;
     let fee_payer = context.payer.pubkey();
 
+    process_at(
+        &mut context,
+        base_time,
+        start_campaign_instruction(program_id, wallet.pubkey(), campaign),
+        &[&wallet],
+    )
+    .await
+    .expect("start campaign through the SBF program");
+    process_at(
+        &mut context,
+        base_time + 1,
+        contribution_instruction(
+            program_id,
+            wallet.pubkey(),
+            campaign,
+            participant,
+            vault,
+            price_update,
+            quote,
+            quote_expires_at,
+        ),
+        &[&wallet],
+    )
+    .await
+    .expect("record the participant's real contribution through the SBF program");
+    assert_eq!(
+        context.banks_client.get_balance(vault).await.unwrap(),
+        DEPOSIT_LAMPORTS
+    );
+    let participant_account = context
+        .banks_client
+        .get_account(participant)
+        .await
+        .unwrap()
+        .expect("successful contribution creates a participant receipt");
+    let receipt_rent_lamports = participant_account.lamports;
+    let mut participant_bytes: &[u8] = &participant_account.data;
+    let recorded_participant =
+        Participant::try_deserialize(&mut participant_bytes).expect("deserialize participant");
+    assert_eq!(recorded_participant.amount_lamports, DEPOSIT_LAMPORTS);
+
     assert_rejected_at(
         &mut context,
-        DEADLINE - 1,
+        deadline - 1,
         finalize_failure_instruction(program_id, fee_payer, campaign),
         &[],
         "finalizing before the deadline",
@@ -295,7 +321,7 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
     .await;
     assert_rejected_at(
         &mut context,
-        DEADLINE - 1,
+        deadline - 1,
         claim_refund_instruction(program_id, wallet.pubkey(), campaign, participant, vault),
         &[&wallet],
         "claiming before the campaign has failed",
@@ -303,14 +329,16 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
     .await;
     assert_rejected_at(
         &mut context,
-        DEADLINE,
-        late_contribution_instruction(
+        deadline,
+        contribution_instruction(
             program_id,
             late_contributor.pubkey(),
             campaign,
             late_participant,
             vault,
             price_update,
+            quote,
+            quote_expires_at,
         ),
         &[&late_contributor],
         "contributing at the deadline",
@@ -328,7 +356,7 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
 
     process_at(
         &mut context,
-        DEADLINE,
+        deadline,
         finalize_failure_instruction(program_id, fee_payer, campaign),
         &[],
     )
@@ -343,7 +371,7 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
     let vault_before_wrong_wallet = context.banks_client.get_balance(vault).await.unwrap();
     assert_rejected_at(
         &mut context,
-        DEADLINE + 1,
+        deadline + 1,
         claim_refund_instruction(program_id, attacker.pubkey(), campaign, participant, vault),
         &[&attacker],
         "another wallet claiming the participant's refund",
@@ -356,7 +384,7 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
     );
     process_at(
         &mut context,
-        DEADLINE + 1,
+        deadline + 1,
         claim_refund_instruction(program_id, wallet.pubkey(), campaign, participant, vault),
         &[&wallet],
     )
@@ -369,14 +397,14 @@ async fn deadline_refund_lifecycle_uses_deterministic_clock_values() {
         .unwrap();
     assert_eq!(
         wallet_after - wallet_before,
-        DEPOSIT_LAMPORTS + RECEIPT_RENT_LAMPORTS,
+        DEPOSIT_LAMPORTS + receipt_rent_lamports,
         "the wallet receives the exact saved deposit and its receipt rent; the separate test payer pays fees"
     );
     assert_eq!(context.banks_client.get_balance(vault).await.unwrap(), 0);
 
     assert_rejected_at(
         &mut context,
-        DEADLINE + 1,
+        deadline + 1,
         claim_refund_instruction(program_id, wallet.pubkey(), campaign, participant, vault),
         &[&wallet],
         "claiming the same refund twice",
