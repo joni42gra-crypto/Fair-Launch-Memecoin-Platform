@@ -1,0 +1,67 @@
+Продолжи подготовку Stage 4A.3 в отдельном worktree. Выполняй проверки и подготовь результат к ревью. Не коммить и не пушь.
+
+**Контекст CI:** Stage 4A.2 успешно прошёл GitHub Actions: настоящий Pump SBF выполнил `init_user_volume_accumulator` через CPI. Stage 4A.3 пока не подтверждён GitHub Actions.
+
+**Рабочий каталог:**
+`/tmp/solana-launchpad-stage-4a3-review`
+
+**Базовый commit:**
+`39bf319cc50b00984baaca3fdf5ac3efb8c17757`
+
+### 1. Проверь состояние Git
+
+- Убедись, что находишься в указанном worktree.
+- Проверь `git status --short`, `git branch --show-current` и `git rev-parse HEAD`.
+- Не меняй основную ветку и исходный worktree.
+- Не изменяй и не переноси `.agents/memory/` и `attached_assets/Pasted--4A-3-Pump-SBF--1792428058985_1792428058986.txt`.
+
+### 2. Проверь diff всех семи согласованных файлов
+
+- `.github/workflows/pump-cpi-probe.yml`
+- `onchain/pump-cpi-lab/Cargo.lock`
+- `onchain/pump-cpi-lab/Cargo.toml`
+- `onchain/pump-cpi-lab/README.md`
+- `onchain/pump-cpi-lab/fixtures/manifest.json`
+- `onchain/pump-cpi-lab/scripts/lab.py`
+- `onchain/pump-cpi-lab/tests/pump_create_v2.rs`
+
+Проверь `git diff --check`, `git diff --stat`, а также содержимое нового Rust-теста и изменения workflow. Для нового, ещё неотслеживаемого файла используй `git diff --no-index /dev/null onchain/pump-cpi-lab/tests/pump_create_v2.rs` или прочитай его напрямую.
+
+### 3. Выполни доступные проверки
+
+- Python unit-тесты лаборатории.
+- Python syntax check.
+- JSON parsing для `fixtures/manifest.json`.
+- Проверку YAML workflow.
+- `cargo metadata --locked --no-deps`.
+- `cargo fmt --all -- --check`, только если доступна закреплённая версия Rust 1.89.0.
+- Compile-only для лаборатории, только если доступен Rust 1.89.0 и необходимые зависимости.
+
+Если версия Rust не совпадает с закреплённой, не меняй toolchain или зависимости ради обхода. Если `io_uring` preflight завершается `EPERM`, не обходи его и не запускай runtime локально.
+
+### 4. Проверь тест `create_v2`
+
+Убедись, что тест:
+- использует закреплённые Pump SBF и Mayhem SBF;
+- выполняет реальную инструкцию Pump `create_v2` через CPI;
+- проверяет mint, Token-2022 metadata, bonding curve и ATA;
+- проверяет `CreateEvent`, если тест заявляет проверку этого события;
+- корректно проверяет creator PDA и подписи;
+- не выполняет покупку токена, миграцию, сбор комиссий, деплой или сетевые транзакции;
+- не меняет escrow-программу, корневые зависимости или основной escrow workflow.
+
+Не считай наличие проверки в исходном коде доказательством успешного выполнения runtime.
+
+### 5. Подготовь изменения к ревью
+
+Не создавай ветку, если она уже существует. Не выполняй `git add`, `commit` или `push` без моего отдельного разрешения.
+
+В конце выведи:
+1. итоговый `git status --short`;
+2. список изменённых файлов и diff-stat;
+3. результаты каждой проверки;
+4. доступную версию Rust и причину пропуска недоступных проверок;
+5. что именно ещё требуется подтвердить в GitHub Actions;
+6. точные команды, которые мне нужно будет выполнить вручную для подготовки и отправки изменений.
+
+Не объявляй Stage 4A.3 успешным, пока GitHub Actions не подтвердит выполнение теста `create_v2` на закреплённом Pump SBF.
