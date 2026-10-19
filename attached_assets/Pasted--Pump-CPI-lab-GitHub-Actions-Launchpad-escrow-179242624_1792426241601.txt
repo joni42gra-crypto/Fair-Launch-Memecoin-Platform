@@ -1,0 +1,39 @@
+Продолжи диагностику изолированного Pump CPI lab.
+
+**Статус GitHub Actions:**
+- `Launchpad escrow integration tests`: последний подтверждённый результат GREEN.
+- `Real Pump SBF on Agave 3.1.10`: последний предоставленный запуск RED на `InsufficientFundsForRent { account_index: 2 }`.
+- `binary_smoke`: PASSED.
+- Реальная инструкция `InitUserVolumeAccumulator` выполняется через CPI, но вся транзакция откатывается при проверке rent-состояния.
+
+**Текущая ветка и Git:**
+- Branch: `ci/pump-cpi-lab-clean`
+- HEAD: `cada42d8fe736b1857503b74ec33ce71faa88fdf`
+- Tracked и staged diff пусты.
+- Не добавляй в Git приложенный файл `attached_assets/Pasted--InsufficientFundsForRent-Pump-CPI--1792425687853_1792425687854.txt`.
+
+### Задача
+
+Работай только с `onchain/pump-cpi-lab/tests/pump_cpi_probe.rs`.
+
+1. Добавь диагностические логи внутри native probe непосредственно после `invoke_signed`, до возврата из инструкции:
+   - адрес и роль PDA-плательщика;
+   - его lamports до и после CPI;
+   - адрес, owner, lamports и `data_len` `UserVolumeAccumulator`;
+   - runtime Rent и рассчитанный минимум для фактического `data_len`.
+2. Добавь вывод `transaction.message.account_keys` с индексами и соответствующими ролями, чтобы подтвердить соответствие `account_index: 2` плательщику.
+3. Не отключай rent checks и не меняй настоящий Pump SBF.
+4. Исправь начальное финансирование probe-плательщика: оно должно покрывать rent для фактического размера создаваемого аккаунта плюс `Rent::minimum_balance(0)` для самого пустого PDA-плательщика. Не используй произвольный запас.
+5. Не утверждай, что размер равен 137 байтам, пока он не подтверждён наблюдением `data_len` после CPI.
+6. Сохрани строгие проверки успешного выполнения CPI, владельца аккаунта, его длины, discriminator/data и ожидаемого списания. Если диагностика выявит другое поведение, сначала объясни его, не ослабляя проверки.
+
+### Ограничения
+
+- Не менять escrow-контракт, Anchor.toml, зависимости или существующий workflow.
+- Не обходить `io_uring` preflight.
+- Не выполнять Devnet/Mainnet-транзакции.
+- Не коммитить и не делать push.
+- После изменений выполнить `cargo fmt --check`, compile-only для `binary_smoke` и `pump_cpi_probe`, доступные проверки лаборатории и `git diff --check`.
+- Если локальный runtime заблокирован `io_uring`, явно указать это и не заявлять, что CPI-тест прошёл.
+
+В отчёте укажи изменённые файлы, результаты проверок, текущую ветку и HEAD, состояние индекса и точный следующий шаг для проверки через GitHub Actions.

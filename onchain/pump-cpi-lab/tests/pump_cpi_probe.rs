@@ -6,10 +6,12 @@ use {
     solana_program::{
         account_info::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
+        msg,
         program::invoke_signed,
         program_error::ProgramError,
         pubkey::Pubkey,
         rent::Rent,
+        sysvar::Sysvar,
     },
     solana_program_test::{processor, ProgramTest},
     solana_signer::Signer,
@@ -209,7 +211,40 @@ fn process_probe<'a>(
         pump_program.clone(),
     ];
 
-    invoke_signed(&instruction, &cpi_accounts, signer_seeds)
+    let payer_lamports_before = payer.lamports();
+    msg!(
+        "PUMP_CPI_DIAG payer role=probe_payer_pda address={} lamports_before={}",
+        payer.key,
+        payer_lamports_before
+    );
+    msg!(
+        "PUMP_CPI_DIAG accumulator role=user_volume_accumulator address={} owner_before={} lamports_before={} data_len_before={}",
+        user_volume_accumulator.key,
+        user_volume_accumulator.owner,
+        user_volume_accumulator.lamports(),
+        user_volume_accumulator.data_len()
+    );
+
+    let cpi_result = invoke_signed(&instruction, &cpi_accounts, signer_seeds);
+    let runtime_rent = Rent::get()?;
+    let accumulator_data_len = user_volume_accumulator.data_len();
+    msg!("PUMP_CPI_DIAG invoke_signed_result={cpi_result:?}");
+    msg!(
+        "PUMP_CPI_DIAG payer role=probe_payer_pda address={} lamports_before={} lamports_after={} minimum_balance_empty_account={}",
+        payer.key,
+        payer_lamports_before,
+        payer.lamports(),
+        runtime_rent.minimum_balance(0)
+    );
+    msg!(
+        "PUMP_CPI_DIAG accumulator role=user_volume_accumulator address={} owner_after={} lamports_after={} data_len_after={} runtime_rent={runtime_rent:?} minimum_balance_for_data_len={}",
+        user_volume_accumulator.key,
+        user_volume_accumulator.owner,
+        user_volume_accumulator.lamports(),
+        accumulator_data_len,
+        runtime_rent.minimum_balance(accumulator_data_len)
+    );
+    cpi_result
 }
 
 #[tokio::test]
@@ -254,7 +289,9 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
         Pubkey::find_program_address(&[USER_VOLUME_ACCUMULATOR_SEED, user_pda.as_ref()], &pump_id)
             .0;
     let event_authority = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &pump_id).0;
-    let payer_rent_budget = Rent::default().minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
+    let configured_rent = Rent::default();
+    let payer_rent_budget = configured_rent.minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
+    let empty_payer_rent_reserve = configured_rent.minimum_balance(0);
     let mut evidence = json!({
         "stage": "before_bank_start",
         "pump_program_id": pump_id.to_string(),
@@ -266,7 +303,13 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
         "user_pda": user_pda.to_string(),
         "pump_user_volume_accumulator_pda": accumulator_pda.to_string(),
         "event_authority": event_authority.to_string(),
-        "payer_funds": "synthetic ProgramTest genesis balance; rent only",
+        "payer_funds": "synthetic ProgramTest genesis balance; accumulator rent budget plus empty payer rent reserve",
+        "expected_accumulator_rent_budget_bytes": USER_VOLUME_ACCUMULATOR_SIZE,
+        "payer_initial_lamports": payer_rent_budget
+            .checked_add(empty_payer_rent_reserve)
+            .expect("test payer balance does not overflow"),
+        "accumulator_initial_lamports": 0,
+        "user_initial_lamports": 1,
         "cpi_tested": false,
         "token_creation_tested": false,
         "external_rpc_used": false
@@ -290,7 +333,7 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
 
     let system_program_id = solana_sdk_ids::system_program::id();
     let payer_initial_lamports = payer_rent_budget
-        .checked_add(1)
+        .checked_add(empty_payer_rent_reserve)
         .expect("test payer balance does not overflow");
     test.add_account(
         payer_pda,
@@ -314,18 +357,19 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
     );
 
     let context = test.start_with_context().await;
-    let rent_lamports = context
+    let runtime_rent = context
         .banks_client
         .get_rent()
         .await
-        .expect("ProgramTest runtime Rent sysvar must be available")
-        .minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
+        .expect("ProgramTest runtime Rent sysvar must be available");
+    let rent_lamports = runtime_rent.minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE);
+    let runtime_empty_payer_reserve = runtime_rent.minimum_balance(0);
     assert_eq!(
         payer_initial_lamports,
         rent_lamports
-            .checked_add(1)
+            .checked_add(runtime_empty_payer_reserve)
             .expect("runtime payer balance does not overflow"),
-        "payer must be funded for the actual ProgramTest runtime rent"
+        "payer must cover the accumulator rent budget and remain rent-exempt as an empty system account"
     );
     let loaded_pump = context
         .banks_client
@@ -361,6 +405,54 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
         &[&context.payer],
         context.last_blockhash,
     );
+    let fee_payer = context.payer.pubkey();
+    let transaction_account_keys: Vec<Value> = transaction
+        .message
+        .account_keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| {
+            let role = if key == &fee_payer {
+                "program_test_fee_payer"
+            } else if key == &payer_pda {
+                "probe_payer_pda"
+            } else if key == &user_pda {
+                "probe_user_pda"
+            } else if key == &accumulator_pda {
+                "pump_user_volume_accumulator_pda"
+            } else if key == &system_program_id {
+                "system_program"
+            } else if key == &event_authority {
+                "pump_event_authority"
+            } else if key == &pump_id {
+                "pump_program"
+            } else if key == &probe_id {
+                "native_probe_program"
+            } else {
+                "unclassified"
+            };
+            println!("TRANSACTION_ACCOUNT_KEY index={index} role={role} address={key}");
+            json!({
+                "index": index,
+                "role": role,
+                "address": key.to_string()
+            })
+        })
+        .collect();
+    assert_eq!(
+        transaction.message.account_keys.get(2),
+        Some(&payer_pda),
+        "Agave account_index 2 must map to the probe payer PDA; see key diagnostics"
+    );
+    evidence["transaction_message_account_keys"] = json!(transaction_account_keys);
+    evidence["runtime_rent"] = json!(format!("{runtime_rent:?}"));
+    evidence["accumulator_rent_budget_lamports"] = json!(rent_lamports);
+    evidence["empty_payer_rent_reserve_lamports"] = json!(runtime_empty_payer_reserve);
+    fs::write(
+        &evidence_file,
+        serde_json::to_vec_pretty(&evidence).unwrap(),
+    )
+    .unwrap();
     let outcome = context
         .banks_client
         .process_transaction_with_metadata(transaction)
@@ -415,18 +507,23 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
         USER_VOLUME_ACCUMULATOR_DISCRIMINATOR.as_slice()
     );
     assert_eq!(&accumulator.data[8..40], user_pda.as_ref());
-    assert_eq!(accumulator.lamports, rent_lamports);
+    let accumulator_required_lamports = runtime_rent.minimum_balance(accumulator.data.len());
+    assert_eq!(accumulator.lamports, accumulator_required_lamports);
 
     let payer_after = context
         .banks_client
         .get_account(payer_pda)
         .await
         .unwrap()
-        .expect("the one-lamport system PDA remains after paying rent");
+        .expect("the rent-reserved system PDA remains after paying accumulator rent");
     assert_eq!(
         payer_after.lamports,
-        payer_initial_lamports - rent_lamports,
-        "Only the fixed account's exact rent was spent"
+        payer_initial_lamports - accumulator_required_lamports,
+        "Only the accumulator's exact runtime rent was spent"
+    );
+    assert_eq!(
+        payer_after.lamports, runtime_empty_payer_reserve,
+        "The empty system-owned payer PDA must remain rent-exempt"
     );
 
     evidence["stage"] = json!("successful_pump_cpi_verified");
