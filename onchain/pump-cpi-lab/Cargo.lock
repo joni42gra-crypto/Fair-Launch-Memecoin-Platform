@@ -3715,6 +3715,7 @@ dependencies = [
  "solana-transaction-error",
  "spl-associated-token-account",
  "spl-token-2022",
+ "spl-token-metadata-interface",
  "tokio",
 ]
 

@@ -6,15 +6,16 @@ use {
     solana_instruction::{AccountMeta, Instruction},
     solana_program::{
         account_info::AccountInfo, entrypoint::ProgramResult, msg, program::invoke_signed,
-        program_error::ProgramError, pubkey::Pubkey,
+        program_error::ProgramError, program_option::COption, pubkey::Pubkey,
     },
     solana_program_test::{processor, ProgramTest},
     solana_signer::Signer,
     solana_transaction::Transaction,
     spl_token_2022::{
-        extension::{token_metadata::TokenMetadata, BaseStateWithExtensions, StateWithExtensions},
+        extension::{BaseStateWithExtensions, StateWithExtensions},
         state::{Account as TokenAccount, Mint},
     },
+    spl_token_metadata_interface::state::TokenMetadata,
     std::{env, fs, path::Path, path::PathBuf, process::Command, str::FromStr},
 };
 
@@ -1150,7 +1151,8 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     assert_eq!(mint_state.base.decimals, TOKEN_DECIMALS);
     assert_eq!(mint_state.base.supply, global_state.token_total_supply);
     assert_eq!(
-        mint_state.base.mint_authority, None,
+        mint_state.base.mint_authority,
+        COption::None,
         "Pump must revoke mint authority after minting the fixed supply"
     );
     let token_metadata = mint_state
@@ -1264,10 +1266,11 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     evidence["mint_data_len"] = json!(mint_account.data.len());
     evidence["mint_decimals"] = json!(mint_state.base.decimals);
     evidence["mint_supply"] = json!(mint_state.base.supply);
-    evidence["mint_authority"] = json!(mint_state
-        .base
-        .mint_authority
-        .map(|authority| authority.to_string()));
+    let mint_authority = match mint_state.base.mint_authority {
+        COption::None => None,
+        COption::Some(authority) => Some(authority.to_string()),
+    };
+    evidence["mint_authority"] = json!(mint_authority);
     evidence["bonding_curve_owner"] = json!(curve_account.owner.to_string());
     evidence["bonding_curve_data_len"] = json!(curve_account.data.len());
     evidence["bonding_curve_creator"] = json!(curve_creator.to_string());
