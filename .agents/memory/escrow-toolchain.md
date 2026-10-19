@@ -32,3 +32,9 @@ Agave 3.1.10's local validator does not expose a `warpSlot` RPC method. Its `--w
 **Why:** slot advancement alone does not make a time-based on-chain deadline pass.
 
 **How to apply:** keep tests deterministic by setting `Clock.unix_timestamp` directly in Agave's in-process ProgramTest bank rather than waiting for wall-clock time or calling a validator RPC method.
+
+System-owned, zero-data escrow PDAs are subject to Solana's rent-state transition rules. An exact receipt-only refund can fail when it leaves a positive vault balance below the rent-exempt minimum, even if the vault contains enough SOL for that refund.
+
+**Why:** unsolicited deposits can create rent dust; Agave rejects a rent-exempt-to-rent-paying transition. Sweeping the dust to the claimant would violate the exact-refund policy, and silently charging the claimant to fund rent is not approved.
+
+**How to apply:** test atomic rollback on runtime rent failure as well as insufficient funds. Treat a rent reserve/funding strategy as a separate settlement-design decision before real funds; keep contribution refunds, receipt rent, and unsolicited vault deposits distinct.

@@ -396,6 +396,62 @@ pub mod launchpad_escrow {
         Ok(())
     }
 
+    pub fn finalize_failure_v2(ctx: Context<FinalizeFailureV2>) -> Result<()> {
+        let campaign = &mut ctx.accounts.campaign;
+        require!(
+            campaign.status == CampaignStatus::Open,
+            EscrowError::CampaignNotOpen
+        );
+        validate_v2_refund_window(campaign, Clock::get()?.unix_timestamp)?;
+        campaign.status = CampaignStatus::Failed;
+        Ok(())
+    }
+
+    pub fn claim_refund_v2(ctx: Context<ClaimRefundV2>) -> Result<()> {
+        let campaign = &mut ctx.accounts.campaign;
+        require!(
+            campaign.status == CampaignStatus::Failed,
+            EscrowError::CampaignV2NotRefundable
+        );
+        validate_v2_refund_window(campaign, Clock::get()?.unix_timestamp)?;
+
+        let amount = ctx.accounts.participant.amount_lamports;
+        require!(amount > 0, EscrowError::InvalidRefundAmount);
+        let next_total_lamports = campaign
+            .total_lamports
+            .checked_sub(amount)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        require!(
+            ctx.accounts.vault.lamports() >= amount,
+            EscrowError::InsufficientV2VaultFunds
+        );
+
+        let campaign_key = campaign.key();
+        let bump = [ctx.bumps.vault];
+        let vault_seeds: &[&[u8]] = &[b"vault_v2", campaign_key.as_ref(), &bump];
+        system_program::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.key(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.wallet.to_account_info(),
+                },
+                &[vault_seeds],
+            ),
+            amount,
+        )?;
+        campaign.total_lamports = next_total_lamports;
+        emit!(RefundClaimedV2 {
+            campaign: campaign_key,
+            wallet: ctx.accounts.wallet.key(),
+            amount_lamports: amount,
+        });
+        // Anchor closes the receipt only after success. Its rent is separate
+        // from the exact contribution transferred out of the V2 vault.
+        // A Failed campaign cannot recreate a receipt through contribute_v2.
+        Ok(())
+    }
+
     pub fn finalize_failure(ctx: Context<FinalizeFailure>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let campaign = &mut ctx.accounts.campaign;
@@ -567,6 +623,56 @@ pub struct ContributeV2<'info> {
 }
 
 #[derive(Accounts)]
+pub struct FinalizeFailureV2<'info> {
+    pub caller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [
+            b"campaign_v2",
+            campaign.creator.as_ref(),
+            campaign.campaign_id.to_le_bytes().as_ref()
+        ],
+        bump = campaign.bump
+    )]
+    pub campaign: Account<'info, CampaignV2>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimRefundV2<'info> {
+    #[account(mut)]
+    pub wallet: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [
+            b"campaign_v2",
+            campaign.creator.as_ref(),
+            campaign.campaign_id.to_le_bytes().as_ref()
+        ],
+        bump = campaign.bump
+    )]
+    pub campaign: Account<'info, CampaignV2>,
+    #[account(
+        mut,
+        close = wallet,
+        seeds = [b"participant_v2", campaign.key().as_ref(), wallet.key().as_ref()],
+        bump = participant.bump,
+        has_one = wallet,
+        constraint = participant.campaign == campaign.key() @ EscrowError::InvalidParticipant
+    )]
+    pub participant: Account<'info, ParticipantV2>,
+    /// CHECK: Only the canonical, empty, System Program-owned V2 vault may sign a transfer.
+    #[account(
+        mut,
+        seeds = [b"vault_v2", campaign.key().as_ref()],
+        bump,
+        constraint = vault.owner == &system_program::ID @ EscrowError::InvalidVaultOwner,
+        constraint = vault.data_is_empty() @ EscrowError::InvalidV2VaultData
+    )]
+    pub vault: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct FinalizeFailure<'info> {
     pub caller: Signer<'info>,
     #[account(mut)]
@@ -717,6 +823,13 @@ pub struct RefundClaimed {
     pub amount_lamports: u64,
 }
 
+#[event]
+pub struct RefundClaimedV2 {
+    pub campaign: Pubkey,
+    pub wallet: Pubkey,
+    pub amount_lamports: u64,
+}
+
 #[error_code]
 pub enum EscrowError {
     #[msg("The campaign is not open.")]
@@ -763,6 +876,14 @@ pub enum EscrowError {
     CampaignDeadlineOverflow,
     #[msg("The amount does not equal the V2 campaign contribution calculated from Pyth.")]
     IncorrectV2LamportAmount,
+    #[msg("The V2 campaign must have failed after its deadline with fewer participants than its saved target.")]
+    CampaignV2NotRefundable,
+    #[msg("The V2 campaign deadline does not match its saved finite duration.")]
+    InvalidV2CampaignDeadline,
+    #[msg("The V2 vault must have no account data.")]
+    InvalidV2VaultData,
+    #[msg("The V2 vault has insufficient lamports for the recorded refund.")]
+    InsufficientV2VaultFunds,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -811,6 +932,32 @@ pub fn calculate_required_lamports(
 
 pub fn confidence_is_acceptable(price: u64, confidence: u64) -> bool {
     price > 0 && (confidence as u128) * 10_000 <= (price as u128) * (MAX_CONFIDENCE_BPS as u128)
+}
+
+fn validate_v2_refund_window(campaign: &CampaignV2, now: i64) -> Result<()> {
+    require!(
+        (MIN_CAMPAIGN_TARGET_PARTICIPANTS..=MAX_PARTICIPANTS)
+            .contains(&campaign.target_participants),
+        EscrowError::InvalidCampaignParticipantTarget
+    );
+    require!(
+        (MIN_CAMPAIGN_DURATION_MINUTES..=MAX_CAMPAIGN_DURATION_MINUTES)
+            .contains(&campaign.duration_minutes),
+        EscrowError::InvalidCampaignDuration
+    );
+    let expected_deadline = campaign
+        .started_at
+        .checked_add(i64::from(campaign.duration_minutes) * 60)
+        .ok_or(EscrowError::CampaignDeadlineOverflow)?;
+    require!(
+        campaign.ends_at == expected_deadline,
+        EscrowError::InvalidV2CampaignDeadline
+    );
+    require!(
+        now >= campaign.ends_at && campaign.participant_count < campaign.target_participants,
+        EscrowError::CampaignV2NotRefundable
+    );
+    Ok(())
 }
 
 pub fn refund_window_is_open(participants: u8, now: i64, deadline: i64) -> bool {
