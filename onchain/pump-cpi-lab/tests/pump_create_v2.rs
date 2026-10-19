@@ -7,7 +7,7 @@ use {
     solana_program::{
         account_info::AccountInfo, clock::Clock, entrypoint::ProgramResult, msg,
         program::invoke_signed, program_error::ProgramError, program_option::COption,
-        pubkey::Pubkey,
+        pubkey::Pubkey, rent::Rent,
     },
     solana_program_test::{processor, ProgramTest},
     solana_signer::Signer,
@@ -1016,12 +1016,43 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         },
     );
 
+    let fee_recipient_rent_lamports = Rent::default().minimum_balance(0);
+    for address in PUMP_NORMAL_FEE_RECIPIENTS {
+        let recipient = Pubkey::from_str(address).expect("pinned normal fee recipient address");
+        test.add_account(
+            recipient,
+            Account {
+                lamports: fee_recipient_rent_lamports,
+                data: vec![],
+                owner: solana_sdk_ids::system_program::id(),
+                executable: false,
+                rent_epoch: 0,
+            },
+        );
+    }
+
     let context = test.start_with_context().await;
     let runtime_rent = context
         .banks_client
         .get_rent()
         .await
         .expect("ProgramTest runtime Rent sysvar must be available");
+    for address in PUMP_NORMAL_FEE_RECIPIENTS {
+        let recipient = Pubkey::from_str(address).expect("pinned normal fee recipient address");
+        let account = context
+            .banks_client
+            .get_account(recipient)
+            .await
+            .unwrap()
+            .expect("each Pump fee recipient must be preloaded in ProgramTest");
+        assert_eq!(account.owner, solana_sdk_ids::system_program::id());
+        assert!(account.data.is_empty());
+        assert!(account.lamports >= fee_recipient_rent_lamports);
+        assert!(
+            runtime_rent.is_exempt(account.lamports, account.data.len()),
+            "each fee recipient must be rent exempt before SetParams"
+        );
+    }
     let loaded_pump = context
         .banks_client
         .get_account(pump_id)
