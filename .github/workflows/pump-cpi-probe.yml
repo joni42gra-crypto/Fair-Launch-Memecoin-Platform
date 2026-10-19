@@ -26,8 +26,6 @@ jobs:
         working-directory: onchain/pump-cpi-lab
     env:
       RUSTUP_TOOLCHAIN: "1.89.0"
-      PUMP_LAB_CACHE_DIR: ${{ runner.temp }}/pump-sbf-smoke-0.4.1
-      PUMP_LAB_EVIDENCE_DIR: ${{ runner.temp }}/pump-sbf-evidence
       CARGO_BUILD_JOBS: "2"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
@@ -35,6 +33,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set temporary artifact paths
+        run: |
+          set -euo pipefail
+          echo "PUMP_LAB_CACHE_DIR=$RUNNER_TEMP/pump-sbf-smoke-0.4.1" >> "$GITHUB_ENV"
+          echo "PUMP_LAB_EVIDENCE_DIR=$RUNNER_TEMP/pump-sbf-evidence" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/pump-sbf-evidence"
 
       - name: Check io_uring before build or runtime startup
         run: |
