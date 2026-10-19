@@ -5,8 +5,9 @@ use {
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_instruction::{AccountMeta, Instruction},
     solana_program::{
-        account_info::AccountInfo, entrypoint::ProgramResult, msg, program::invoke_signed,
-        program_error::ProgramError, program_option::COption, pubkey::Pubkey,
+        account_info::AccountInfo, clock::Clock, entrypoint::ProgramResult, msg,
+        program::invoke_signed, program_error::ProgramError, program_option::COption,
+        pubkey::Pubkey,
     },
     solana_program_test::{processor, ProgramTest},
     solana_signer::Signer,
@@ -40,6 +41,14 @@ const CREATE_EVENT_DISCRIMINATOR: [u8; 8] = [27, 114, 169, 77, 222, 235, 99, 118
 const EVENT_CPI_TAG: [u8; 8] = [228, 69, 165, 46, 81, 203, 154, 29];
 // pump-rust-client 0.4.1 uses this configured supply in its Global fixtures.
 const PUMP_TOKEN_TOTAL_SUPPLY: u64 = 1_000_000_000_000_000;
+// Curve parameters from pump-rust-client 0.4.1's pump_v2 Global fixture.
+const PUMP_INITIAL_VIRTUAL_TOKEN_RESERVES: u64 = 1_073_000_000_000_000;
+const PUMP_INITIAL_VIRTUAL_SOL_RESERVES: u64 = 30_000_000_000;
+const PUMP_INITIAL_REAL_TOKEN_RESERVES: u64 = 793_100_000_000_000;
+// Fee parameters from pump-rust-client 0.4.1's fixture_global.
+const PUMP_FEE_BASIS_POINTS: u64 = 100;
+const PUMP_POOL_MIGRATION_FEE: u64 = 6_900_000_000;
+const PUMP_CREATOR_FEE_BASIS_POINTS: u64 = 50;
 const NAME: &str = "Launchpad Lab Token";
 const SYMBOL: &str = "LLAB";
 const URI: &str = "https://example.invalid/launchpad-lab.json";
@@ -365,25 +374,21 @@ fn pump_toggle_create_v2_instruction(
     }
 }
 
-fn pump_set_params_instruction(
-    pump_id: Pubkey,
-    global: Pubkey,
-    authority: Pubkey,
-    current: &PumpGlobalSnapshot,
-) -> Instruction {
+fn pump_set_params_instruction(pump_id: Pubkey, global: Pubkey, authority: Pubkey) -> Instruction {
     let event_authority = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &pump_id).0;
     let mut data = SET_PARAMS_DISCRIMINATOR.to_vec();
-    data.extend_from_slice(&current.initial_virtual_token_reserves.to_le_bytes());
-    data.extend_from_slice(&current.initial_virtual_sol_reserves.to_le_bytes());
-    data.extend_from_slice(&current.initial_real_token_reserves.to_le_bytes());
+    data.extend_from_slice(&PUMP_INITIAL_VIRTUAL_TOKEN_RESERVES.to_le_bytes());
+    data.extend_from_slice(&PUMP_INITIAL_VIRTUAL_SOL_RESERVES.to_le_bytes());
+    data.extend_from_slice(&PUMP_INITIAL_REAL_TOKEN_RESERVES.to_le_bytes());
     data.extend_from_slice(&PUMP_TOKEN_TOTAL_SUPPLY.to_le_bytes());
-    data.extend_from_slice(&current.fee_basis_points.to_le_bytes());
-    data.extend_from_slice(current.withdraw_authority.as_ref());
-    data.push(u8::from(current.enable_migrate));
-    data.extend_from_slice(&current.pool_migration_fee.to_le_bytes());
-    data.extend_from_slice(&current.creator_fee_basis_points.to_le_bytes());
-    data.extend_from_slice(current.set_creator_authority.as_ref());
-    data.extend_from_slice(current.admin_set_creator_authority.as_ref());
+    data.extend_from_slice(&PUMP_FEE_BASIS_POINTS.to_le_bytes());
+    // The ProgramTest payer is a controlled non-System-Program test authority.
+    data.extend_from_slice(authority.as_ref());
+    data.push(0); // enable_migrate (SDK fixture default)
+    data.extend_from_slice(&PUMP_POOL_MIGRATION_FEE.to_le_bytes());
+    data.extend_from_slice(&PUMP_CREATOR_FEE_BASIS_POINTS.to_le_bytes());
+    data.extend_from_slice(Pubkey::default().as_ref()); // set_creator_authority (SDK fixture default)
+    data.extend_from_slice(Pubkey::default().as_ref()); // admin_set_creator_authority (SDK fixture default)
 
     Instruction {
         program_id: pump_id,
@@ -600,6 +605,16 @@ fn read_u64(data: &[u8], offset: &mut usize) -> Option<u64> {
     ))
 }
 
+fn read_i64(data: &[u8], offset: &mut usize) -> Option<i64> {
+    Some(i64::from_le_bytes(
+        read_slice(data, offset, 8)?.try_into().ok()?,
+    ))
+}
+
+fn read_u8(data: &[u8], offset: &mut usize) -> Option<u8> {
+    Some(*read_slice(data, offset, 1)?.first()?)
+}
+
 fn read_bool(data: &[u8], offset: &mut usize) -> Option<bool> {
     match *read_slice(data, offset, 1)?.first()? {
         0 => Some(false),
@@ -743,6 +758,19 @@ struct CreateEventSummary {
     bonding_curve: Pubkey,
     user: Pubkey,
     creator: Pubkey,
+    timestamp: i64,
+    virtual_token_reserves: u64,
+    virtual_sol_reserves: u64,
+    real_token_reserves: u64,
+    token_total_supply: u64,
+    token_program: Pubkey,
+    is_mayhem_mode: bool,
+    is_cashback_enabled: bool,
+    quote_mint: Pubkey,
+    virtual_quote_reserves: u64,
+    creator_fee_bps: u64,
+    is_holder_reward: bool,
+    depth: u8,
 }
 
 fn parse_create_event(data: &[u8], discriminator: &[u8]) -> Option<CreateEventSummary> {
@@ -759,22 +787,20 @@ fn parse_create_event(data: &[u8], discriminator: &[u8]) -> Option<CreateEventSu
         bonding_curve: read_pubkey(event_data, &mut offset)?,
         user: read_pubkey(event_data, &mut offset)?,
         creator: read_pubkey(event_data, &mut offset)?,
+        timestamp: read_i64(event_data, &mut offset)?,
+        virtual_token_reserves: read_u64(event_data, &mut offset)?,
+        virtual_sol_reserves: read_u64(event_data, &mut offset)?,
+        real_token_reserves: read_u64(event_data, &mut offset)?,
+        token_total_supply: read_u64(event_data, &mut offset)?,
+        token_program: read_pubkey(event_data, &mut offset)?,
+        is_mayhem_mode: read_bool(event_data, &mut offset)?,
+        is_cashback_enabled: read_bool(event_data, &mut offset)?,
+        quote_mint: read_pubkey(event_data, &mut offset)?,
+        virtual_quote_reserves: read_u64(event_data, &mut offset)?,
+        creator_fee_bps: read_u64(event_data, &mut offset)?,
+        is_holder_reward: read_bool(event_data, &mut offset)?,
+        depth: read_u8(event_data, &mut offset)?,
     };
-
-    // Validate the remaining CreateEvent fields in the pinned IDL order.
-    let _timestamp = read_slice(event_data, &mut offset, 8)?;
-    let _virtual_token_reserves = read_u64(event_data, &mut offset)?;
-    let _virtual_sol_reserves = read_u64(event_data, &mut offset)?;
-    let _real_token_reserves = read_u64(event_data, &mut offset)?;
-    let _token_total_supply = read_u64(event_data, &mut offset)?;
-    let _token_program = read_pubkey(event_data, &mut offset)?;
-    let _is_mayhem_mode = read_bool(event_data, &mut offset)?;
-    let _is_cashback_enabled = read_bool(event_data, &mut offset)?;
-    let _quote_mint = read_pubkey(event_data, &mut offset)?;
-    let _virtual_quote_reserves = read_u64(event_data, &mut offset)?;
-    let _creator_fee_bps = read_u64(event_data, &mut offset)?;
-    let _is_holder_reward = read_bool(event_data, &mut offset)?;
-    let _depth = read_slice(event_data, &mut offset, 1)?;
     if offset != event_data.len() {
         return None;
     }
@@ -1027,9 +1053,6 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         initial_global_state.token_total_supply, 0,
         "the pinned Pump initialize instruction leaves token_total_supply unset; configure it with set_params"
     );
-    assert!(initial_global_state.initial_virtual_token_reserves > 0);
-    assert!(initial_global_state.initial_virtual_sol_reserves > 0);
-    assert!(initial_global_state.initial_real_token_reserves > 0);
     evidence["global_initialized_by_pump_sbf"] = json!({
         "authority": initial_global_state.authority.to_string(),
         "initial_virtual_token_reserves": initial_global_state.initial_virtual_token_reserves,
@@ -1045,12 +1068,17 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     )
     .unwrap();
 
+    let withdraw_authority = context.payer.pubkey();
+    assert_ne!(
+        withdraw_authority,
+        Pubkey::default(),
+        "Pump IDL error 6014 forbids the System Program ID as withdraw_authority"
+    );
     let set_params_transaction = Transaction::new_signed_with_payer(
         &[pump_set_params_instruction(
             pump_id,
             global,
-            context.payer.pubkey(),
-            &initial_global_state,
+            withdraw_authority,
         )],
         Some(&context.payer.pubkey()),
         &[&context.payer],
@@ -1095,43 +1123,40 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     );
     assert_eq!(
         configured_global_state.initial_virtual_token_reserves,
-        initial_global_state.initial_virtual_token_reserves
+        PUMP_INITIAL_VIRTUAL_TOKEN_RESERVES
     );
     assert_eq!(
         configured_global_state.initial_virtual_sol_reserves,
-        initial_global_state.initial_virtual_sol_reserves
+        PUMP_INITIAL_VIRTUAL_SOL_RESERVES
     );
     assert_eq!(
         configured_global_state.initial_real_token_reserves,
-        initial_global_state.initial_real_token_reserves
+        PUMP_INITIAL_REAL_TOKEN_RESERVES
     );
     assert_eq!(
         configured_global_state.fee_basis_points,
-        initial_global_state.fee_basis_points
+        PUMP_FEE_BASIS_POINTS
     );
     assert_eq!(
         configured_global_state.withdraw_authority,
-        initial_global_state.withdraw_authority
+        withdraw_authority
     );
-    assert_eq!(
-        configured_global_state.enable_migrate,
-        initial_global_state.enable_migrate
-    );
+    assert_eq!(configured_global_state.enable_migrate, false);
     assert_eq!(
         configured_global_state.pool_migration_fee,
-        initial_global_state.pool_migration_fee
+        PUMP_POOL_MIGRATION_FEE
     );
     assert_eq!(
         configured_global_state.creator_fee_basis_points,
-        initial_global_state.creator_fee_basis_points
+        PUMP_CREATOR_FEE_BASIS_POINTS
     );
     assert_eq!(
         configured_global_state.set_creator_authority,
-        initial_global_state.set_creator_authority
+        Pubkey::default()
     );
     assert_eq!(
         configured_global_state.admin_set_creator_authority,
-        initial_global_state.admin_set_creator_authority
+        Pubkey::default()
     );
     evidence["global_params_set_by_pump_sbf"] = json!({
         "source": "actual pinned Pump SBF set_params instruction",
@@ -1248,6 +1273,11 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         &[&context.payer],
         context.last_blockhash,
     );
+    let clock_before = context
+        .banks_client
+        .get_sysvar::<Clock>()
+        .await
+        .expect("ProgramTest must expose Clock before Pump simulation");
     let simulation = context
         .banks_client
         .simulate_transaction(transaction.clone())
@@ -1290,6 +1320,15 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         .process_transaction_with_metadata(transaction)
         .await
         .expect("BanksClient must return the actual transaction result");
+    let clock_after = context
+        .banks_client
+        .get_sysvar::<Clock>()
+        .await
+        .expect("ProgramTest must expose Clock after Pump execution");
+    assert!(
+        clock_after.unix_timestamp >= clock_before.unix_timestamp,
+        "ProgramTest Clock must not move backwards during create_v2"
+    );
     evidence["transaction_result"] = json!(format!("{:?}", outcome.result));
     if let Some(metadata) = &outcome.metadata {
         evidence["compute_units_consumed"] = json!(metadata.compute_units_consumed);
@@ -1381,6 +1420,12 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     let creator_fee_bps = read_u64(&curve_account.data, &mut offset).unwrap();
     let can_edit_creator_fee = read_bool(&curve_account.data, &mut offset).unwrap();
     let holder_reward = read_bool(&curve_account.data, &mut offset).unwrap();
+    let _curve_creator_fee = read_u64(&curve_account.data, &mut offset)
+        .expect("BondingCurve must contain creator_fee after is_holder_reward");
+    let _curve_protocol_fees = read_u64(&curve_account.data, &mut offset)
+        .expect("BondingCurve must contain protocol_fees after creator_fee");
+    let curve_depth = read_u8(&curve_account.data, &mut offset)
+        .expect("BondingCurve must contain depth after protocol_fees");
     assert_eq!(
         virtual_token_reserves,
         global_state.initial_virtual_token_reserves
@@ -1406,6 +1451,33 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     assert_eq!(creator_fee_bps, 0);
     assert!(!can_edit_creator_fee);
     assert!(!holder_reward);
+    assert_eq!(
+        curve_depth, 0,
+        "a SOL-quoted root bonding curve must have depth zero"
+    );
+
+    // The IDL does not provide a fixed timestamp. Bound it by the actual Clock
+    // observed around simulation/execution rather than hard-coding wall time.
+    assert!(
+        event.timestamp >= clock_before.unix_timestamp
+            && event.timestamp <= clock_after.unix_timestamp,
+        "CreateEvent timestamp must be within the observed ProgramTest Clock interval: event={}, before={}, after={}",
+        event.timestamp,
+        clock_before.unix_timestamp,
+        clock_after.unix_timestamp
+    );
+    assert_eq!(event.virtual_token_reserves, virtual_token_reserves);
+    assert_eq!(event.virtual_sol_reserves, virtual_quote_reserves);
+    assert_eq!(event.real_token_reserves, real_token_reserves);
+    assert_eq!(event.token_total_supply, curve_supply);
+    assert_eq!(event.token_program, token_program_id);
+    assert_eq!(event.is_mayhem_mode, mayhem_mode);
+    assert_eq!(event.is_cashback_enabled, cashback);
+    assert_eq!(event.quote_mint, quote_mint);
+    assert_eq!(event.virtual_quote_reserves, virtual_quote_reserves);
+    assert_eq!(event.creator_fee_bps, creator_fee_bps);
+    assert_eq!(event.is_holder_reward, holder_reward);
+    assert_eq!(event.depth, curve_depth);
 
     let curve_token_account = context
         .banks_client
@@ -1443,7 +1515,20 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         "mint": event.mint.to_string(),
         "bonding_curve": event.bonding_curve.to_string(),
         "user": event.user.to_string(),
-        "creator": event.creator.to_string()
+        "creator": event.creator.to_string(),
+        "timestamp": event.timestamp,
+        "virtual_token_reserves": event.virtual_token_reserves,
+        "virtual_sol_reserves": event.virtual_sol_reserves,
+        "real_token_reserves": event.real_token_reserves,
+        "token_total_supply": event.token_total_supply,
+        "token_program": event.token_program.to_string(),
+        "is_mayhem_mode": event.is_mayhem_mode,
+        "is_cashback_enabled": event.is_cashback_enabled,
+        "quote_mint": event.quote_mint.to_string(),
+        "virtual_quote_reserves": event.virtual_quote_reserves,
+        "creator_fee_bps": event.creator_fee_bps,
+        "is_holder_reward": event.is_holder_reward,
+        "depth": event.depth
     });
 
     evidence["stage"] = json!("create_v2_success_verified");
