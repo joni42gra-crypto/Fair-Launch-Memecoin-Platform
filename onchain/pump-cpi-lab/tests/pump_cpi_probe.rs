@@ -280,8 +280,10 @@ async fn real_pump_sbf_accepts_fixed_probe_pda_signer_for_user_accumulator_init(
     env::set_var("BPF_OUT_DIR", &artifact_dir);
     env::set_var("SBF_OUT_DIR", &artifact_dir);
     let mut test = ProgramTest::default();
-    // Register the native probe while BPF is not preferred; then require the
-    // real Pump .so for the Pump program in this same test bank.
+    // ProgramTest::default() prefers BPF whenever BPF_OUT_DIR/SBF_OUT_DIR is
+    // set. Override that default for the native probe, then require BPF for
+    // Pump. add_program selects its implementation at registration time.
+    test.prefer_bpf(false);
     test.add_program("pump-cpi-probe", probe_id, processor!(process_probe));
     test.prefer_bpf(true);
     test.add_program("pump", pump_id, None);
