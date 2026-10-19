@@ -15,11 +15,11 @@ Agave 3.1.10's `solana-test-validator` requires `IORING_FEAT_NODROP` and `IORING
 
 **How to apply:** preflight both required io_uring features, then run integration tests on an Ubuntu 24.04 VM that permits them. Keep local tools under the ignored workspace `.local/share`, because this host's `$HOME/.local/share` was cleared during a runtime refresh.
 
-Agave's SBF builder may invoke Cargo through rustup to read Cargo metadata before compiling. Install and select host Rust `1.89.0`, set both `rustup default 1.89.0` and `RUSTUP_TOOLCHAIN=1.89.0`, and pass the same `CARGO_HOME`, `RUSTUP_HOME`, and toolchain selection into `cargo-build-sbf`. Its explicit `+solana` override still selects the platform-tools SBF compiler.
+Agave's SBF builder may invoke Cargo through rustup to read Cargo metadata before compiling. Install and select host Rust `1.89.0`, set both `rustup default 1.89.0` and `RUSTUP_TOOLCHAIN=1.89.0`, and pass the same `CARGO_HOME`, `RUSTUP_HOME`, and toolchain selection into `cargo-build-sbf`. The builder uses its own internal `+solana` override to locate the platform-tools compiler; this does not register a Rustup toolchain named `solana`.
 
 **Why:** GitHub Actions failed when rustup had no default Cargo toolchain, before the pinned SBF compiler could build the program.
 
-**How to apply:** in the builder's exact child environment, verify `rustc --version`, `cargo --version`, and `rustup show active-toolchain`, then run locked Cargo metadata before invoking the pinned SBF builder.
+**How to apply:** in the builder's exact child environment, verify host `rustc --version`, `cargo --version`, and `rustup show active-toolchain`, then run locked Cargo metadata. After the SBF build, verify the compiler directly at `~/.cache/solana/<platform-tools-version>/platform-tools/rust/bin/rustc`; do not run `rustc +solana` unless a named `solana` Rustup toolchain was explicitly installed.
 
 Anchor 1.0.2 and Pyth receiver SDK 2.0.0 use the Solana 3 instruction/CPI interface. Pyth's `pythnet-sdk` accepts an extremely broad `solana-program >=1.13.6` range, so an unconstrained lock can select Solana `solana-program` 5.x, whose instruction 4 type is incompatible with the 3.x CPI crate. Pin the transitive `solana-program` to 3.0.0 in the escrow program's normal dependencies; this is independent of host-only ProgramTest dependencies.
 

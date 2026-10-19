@@ -68,8 +68,10 @@ fixtures. It does not connect to Devnet or Mainnet.
 Before SBF compilation it explicitly selects host Rust `1.89.0` for the
 builder process and verifies `rustc`, `cargo`, `rustup show active-toolchain`,
 and locked Cargo metadata in that same environment. Agave's builder still uses
-its explicit `+solana` override for the SBF compiler. GitHub Actions forces a
-fresh SBF build on every run.
+its internal `+solana` override for the SBF compiler; this does not install a
+separate Rustup toolchain named `solana`. GitHub Actions verifies the compiler
+directly from the pinned `~/.cache/solana/v1.52/platform-tools/rust/bin/rustc`
+path after the forced SBF build.
 
 The fixture accounts let the tests exercise the program's owner, full-verification
 flag, exact SOL/USD feed ID, publish-time, positive-price, confidence, quote

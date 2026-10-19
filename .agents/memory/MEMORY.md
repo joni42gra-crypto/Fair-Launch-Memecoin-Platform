@@ -1,4 +1,4 @@
 - [Launchpad scope](launchpad-scope.md) — preserve app behavior; keep demos non-real and successful Devnet funds locked pending an approved settlement policy.
 - [Pump.fun pair catalog](pump-pair-catalog.md) — use the published docs snapshot; catalog membership is not compatibility verification.
-- [Local escrow toolchain](escrow-toolchain.md) — pin Pyth's broad Solana dependency to the Anchor 3.x interface; Agave also needs io_uring here.
+- [Local escrow toolchain](escrow-toolchain.md) — keep Agave's bundled SBF compiler separate from host Rustup toolchains; the local validator also needs io_uring.
 - [GitHub push authentication](github-push-auth.md) — verify workspace binding and actual CLI auth before claiming a push; a connection notice alone does not prove remote access.

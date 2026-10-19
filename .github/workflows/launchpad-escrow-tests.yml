@@ -117,6 +117,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          compiler_version="$(rustc +solana --version)"
-          printf '%s\n' "$compiler_version"
-          grep -q '^rustc 1\.89\.0 ' <<< "$compiler_version"
+          sbf_tools="$HOME/.cache/solana/v1.52/platform-tools"
+          sbf_rustc="$sbf_tools/rust/bin/rustc"
+          test -x "$sbf_rustc"
+
+          compiler_version="$("$sbf_rustc" --version)"
+          printf 'SBF compiler at %s: %s\n' "$sbf_rustc" "$compiler_version"
+          grep -q '^rustc 1\.89\.0\([ -]\|$\)' <<< "$compiler_version"
+
+          builder_version="$("$ESCROW_SOLANA_BIN/cargo-build-sbf" --version)"
+          printf '%s\n' "$builder_version"
+          grep -Fxq "platform-tools v1.52" <<< "$builder_version"
+          grep -Fxq "rustc 1.89.0" <<< "$builder_version"
