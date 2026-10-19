@@ -44,3 +44,11 @@ For a campaign without a deadline, each participant may withdraw exactly their o
 **Why:** the user clarified that in an indefinite campaign each person should be able to take back their own amount at any time.
 
 **How to apply:** design an individual, replay-safe withdrawal path for no-deadline campaigns; keep this separate from finite-deadline failure/refund logic and do not enable the mode until that path is tested.
+
+## Escrow account compatibility
+
+New campaign configuration must be additive: preserve the V1 `Campaign` layout, size, instruction behavior, and PDA seeds; put configurable campaign creation behind a separate V2 account and seed namespace.
+
+**Why:** the user requires V2 campaign creation without breaking existing V1 accounts or clients.
+
+**How to apply:** keep V1 handlers and account definitions intact when adding future campaign settings; test V2 account allocation and PDA separation independently.

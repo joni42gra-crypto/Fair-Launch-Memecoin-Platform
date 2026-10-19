@@ -19,13 +19,13 @@ pub const MIN_CAMPAIGN_TARGET_PARTICIPANTS: u8 = 2;
 pub const MIN_CAMPAIGN_DURATION_MINUTES: u16 = 10;
 pub const MAX_CAMPAIGN_DURATION_MINUTES: u16 = 60;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CampaignDuration {
     Minutes(u16),
     NoDeadline,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CampaignParameters {
     pub contribution_usd_cents: u64,
     pub target_participants: u8,
@@ -118,6 +118,47 @@ pub mod launchpad_escrow {
         campaign.refunded_count = 0;
         campaign.total_lamports = 0;
         campaign.status = CampaignStatus::Open;
+        campaign.bump = ctx.bumps.campaign;
+        Ok(())
+    }
+
+    pub fn start_campaign_v2(
+        ctx: Context<StartCampaignV2>,
+        campaign_id: u64,
+        parameters: CampaignParameters,
+    ) -> Result<()> {
+        let validated = validate_campaign_parameters(parameters).map_err(|error| match error {
+            CampaignParameterError::ContributionOutOfRange => {
+                EscrowError::InvalidCampaignContribution
+            }
+            CampaignParameterError::ParticipantCountOutOfRange => {
+                EscrowError::InvalidCampaignParticipantTarget
+            }
+            CampaignParameterError::DurationOutOfRange => EscrowError::InvalidCampaignDuration,
+            CampaignParameterError::NoDeadlineUnsupported => EscrowError::NoDeadlineUnsupported,
+            CampaignParameterError::GoalOverflow => EscrowError::CampaignGoalOverflow,
+        })?;
+
+        let now = Clock::get()?.unix_timestamp;
+        let duration_seconds = i64::from(validated.duration_minutes)
+            .checked_mul(60)
+            .ok_or(EscrowError::CampaignDeadlineOverflow)?;
+        let deadline = now
+            .checked_add(duration_seconds)
+            .ok_or(EscrowError::CampaignDeadlineOverflow)?;
+
+        let campaign = &mut ctx.accounts.campaign;
+        campaign.creator = ctx.accounts.creator.key();
+        campaign.campaign_id = campaign_id;
+        campaign.started_at = now;
+        campaign.ends_at = deadline;
+        campaign.participant_count = 0;
+        campaign.total_lamports = 0;
+        campaign.status = CampaignStatus::Open;
+        campaign.contribution_usd_cents = validated.contribution_usd_cents;
+        campaign.target_usd_cents = validated.target_usd_cents;
+        campaign.target_participants = validated.target_participants;
+        campaign.duration_minutes = validated.duration_minutes;
         campaign.bump = ctx.bumps.campaign;
         Ok(())
     }
@@ -321,6 +362,22 @@ pub struct StartCampaign<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(campaign_id: u64)]
+pub struct StartCampaignV2<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(
+        init,
+        payer = creator,
+        space = CampaignV2::SPACE,
+        seeds = [b"campaign_v2", creator.key().as_ref(), campaign_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub campaign: Account<'info, CampaignV2>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct Contribute<'info> {
     #[account(mut)]
     pub contributor: Signer<'info>,
@@ -417,6 +474,26 @@ impl Campaign {
 }
 
 #[account]
+pub struct CampaignV2 {
+    pub creator: Pubkey,
+    pub campaign_id: u64,
+    pub started_at: i64,
+    pub ends_at: i64,
+    pub participant_count: u8,
+    pub total_lamports: u64,
+    pub status: CampaignStatus,
+    pub contribution_usd_cents: u64,
+    pub target_usd_cents: u64,
+    pub target_participants: u8,
+    pub duration_minutes: u16,
+    pub bump: u8,
+}
+
+impl CampaignV2 {
+    pub const SPACE: usize = 8 + 32 + 8 + 8 + 8 + 1 + 8 + 1 + 8 + 8 + 1 + 2 + 1;
+}
+
+#[account]
 pub struct Participant {
     pub campaign: Pubkey,
     pub wallet: Pubkey,
@@ -492,6 +569,18 @@ pub enum EscrowError {
     InvalidPriceFeed,
     #[msg("Integer arithmetic overflowed.")]
     ArithmeticOverflow,
+    #[msg("Campaign contribution must be between $10 and $100.")]
+    InvalidCampaignContribution,
+    #[msg("Campaign participant target must be between 2 and 100.")]
+    InvalidCampaignParticipantTarget,
+    #[msg("Finite campaign duration must be between 10 and 60 minutes.")]
+    InvalidCampaignDuration,
+    #[msg("No-deadline campaigns are not supported yet.")]
+    NoDeadlineUnsupported,
+    #[msg("Campaign USD target calculation overflowed.")]
+    CampaignGoalOverflow,
+    #[msg("Campaign deadline calculation overflowed.")]
+    CampaignDeadlineOverflow,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -695,6 +784,31 @@ mod tests {
             calculate_campaign_goal_usd_cents(u64::MAX, 2),
             Err(CampaignParameterError::GoalOverflow)
         );
+    }
+
+    #[test]
+    fn campaign_v2_space_matches_anchor_serialized_account_size() {
+        let campaign = CampaignV2 {
+            creator: Pubkey::default(),
+            campaign_id: 1,
+            started_at: 1_700_000_000,
+            ends_at: 1_700_000_600,
+            participant_count: 0,
+            total_lamports: 0,
+            status: CampaignStatus::Open,
+            contribution_usd_cents: 1_000,
+            target_usd_cents: 2_000,
+            target_participants: 2,
+            duration_minutes: 10,
+            bump: 255,
+        };
+        let mut serialized = Vec::new();
+        campaign
+            .try_serialize(&mut serialized)
+            .expect("serialize CampaignV2 with its discriminator");
+
+        assert_eq!(CampaignV2::SPACE, 94);
+        assert_eq!(serialized.len(), CampaignV2::SPACE);
     }
 
     #[test]
