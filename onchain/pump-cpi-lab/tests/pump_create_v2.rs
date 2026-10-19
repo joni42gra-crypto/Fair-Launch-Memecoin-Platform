@@ -32,11 +32,14 @@ const MAYHEM_SOL_VAULT_SEED: &[u8] = b"sol-vault";
 const MAYHEM_STATE_SEED: &[u8] = b"mayhem-state";
 const CREATE_V2_DISCRIMINATOR: [u8; 8] = [214, 144, 76, 236, 95, 139, 49, 180];
 const INITIALIZE_DISCRIMINATOR: [u8; 8] = [175, 175, 109, 31, 13, 152, 155, 237];
+const SET_PARAMS_DISCRIMINATOR: [u8; 8] = [27, 234, 178, 52, 147, 2, 187, 141];
 const TOGGLE_CREATE_V2_DISCRIMINATOR: [u8; 8] = [28, 255, 230, 240, 172, 107, 203, 171];
 const GLOBAL_DISCRIMINATOR: [u8; 8] = [167, 232, 232, 177, 200, 108, 114, 127];
 const BONDING_CURVE_DISCRIMINATOR: [u8; 8] = [23, 183, 248, 55, 96, 216, 172, 96];
 const CREATE_EVENT_DISCRIMINATOR: [u8; 8] = [27, 114, 169, 77, 222, 235, 99, 118];
 const EVENT_CPI_TAG: [u8; 8] = [228, 69, 165, 46, 81, 203, 154, 29];
+// pump-rust-client 0.4.1 uses this configured supply in its Global fixtures.
+const PUMP_TOKEN_TOTAL_SUPPLY: u64 = 1_000_000_000_000_000;
 const NAME: &str = "Launchpad Lab Token";
 const SYMBOL: &str = "LLAB";
 const URI: &str = "https://example.invalid/launchpad-lab.json";
@@ -158,6 +161,7 @@ fn verify_pinned_create_v2_idl(artifact_dir: &Path, expected_idl_sha256: &str) -
             "toggle_create_v2",
             TOGGLE_CREATE_V2_ACCOUNT_LAYOUT.as_slice(),
         ),
+        ("set_params", TOGGLE_CREATE_V2_ACCOUNT_LAYOUT.as_slice()),
     ] {
         let instruction = idl["instructions"]
             .as_array()
@@ -192,6 +196,38 @@ fn verify_pinned_create_v2_idl(artifact_dir: &Path, expected_idl_sha256: &str) -
         .find(|instruction| instruction["name"] == "toggle_create_v2")
         .unwrap()["accounts"];
     assert_eq!(toggle_accounts[3]["address"], Value::Null);
+    let set_params = idl["instructions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|instruction| instruction["name"] == "set_params")
+        .unwrap();
+    assert_eq!(
+        idl_discriminator(&idl, "instructions", "set_params"),
+        SET_PARAMS_DISCRIMINATOR
+    );
+    let set_params_args = [
+        ("initial_virtual_token_reserves", "u64"),
+        ("initial_virtual_sol_reserves", "u64"),
+        ("initial_real_token_reserves", "u64"),
+        ("token_total_supply", "u64"),
+        ("fee_basis_points", "u64"),
+        ("withdraw_authority", "pubkey"),
+        ("enable_migrate", "bool"),
+        ("pool_migration_fee", "u64"),
+        ("creator_fee_basis_points", "u64"),
+        ("set_creator_authority", "pubkey"),
+        ("admin_set_creator_authority", "pubkey"),
+    ];
+    let actual_set_params_args = set_params["args"].as_array().unwrap();
+    assert_eq!(actual_set_params_args.len(), set_params_args.len());
+    for (actual, (expected_name, expected_type)) in
+        actual_set_params_args.iter().zip(set_params_args)
+    {
+        assert_eq!(actual["name"].as_str(), Some(expected_name));
+        assert_eq!(actual["type"].as_str(), Some(expected_type));
+    }
+    assert_eq!(set_params["accounts"][3]["address"], Value::Null);
     let initialize = idl["instructions"]
         .as_array()
         .unwrap()
@@ -317,6 +353,38 @@ fn pump_toggle_create_v2_instruction(
     let event_authority = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &pump_id).0;
     let mut data = TOGGLE_CREATE_V2_DISCRIMINATOR.to_vec();
     data.push(1); // enabled
+    Instruction {
+        program_id: pump_id,
+        accounts: vec![
+            AccountMeta::new(global, false),
+            AccountMeta::new(authority, true),
+            AccountMeta::new_readonly(event_authority, false),
+            AccountMeta::new_readonly(pump_id, false),
+        ],
+        data,
+    }
+}
+
+fn pump_set_params_instruction(
+    pump_id: Pubkey,
+    global: Pubkey,
+    authority: Pubkey,
+    current: &PumpGlobalSnapshot,
+) -> Instruction {
+    let event_authority = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &pump_id).0;
+    let mut data = SET_PARAMS_DISCRIMINATOR.to_vec();
+    data.extend_from_slice(&current.initial_virtual_token_reserves.to_le_bytes());
+    data.extend_from_slice(&current.initial_virtual_sol_reserves.to_le_bytes());
+    data.extend_from_slice(&current.initial_real_token_reserves.to_le_bytes());
+    data.extend_from_slice(&PUMP_TOKEN_TOTAL_SUPPLY.to_le_bytes());
+    data.extend_from_slice(&current.fee_basis_points.to_le_bytes());
+    data.extend_from_slice(current.withdraw_authority.as_ref());
+    data.push(u8::from(current.enable_migrate));
+    data.extend_from_slice(&current.pool_migration_fee.to_le_bytes());
+    data.extend_from_slice(&current.creator_fee_basis_points.to_le_bytes());
+    data.extend_from_slice(current.set_creator_authority.as_ref());
+    data.extend_from_slice(current.admin_set_creator_authority.as_ref());
+
     Instruction {
         program_id: pump_id,
         accounts: vec![
@@ -608,7 +676,13 @@ struct PumpGlobalSnapshot {
     initial_virtual_sol_reserves: u64,
     initial_real_token_reserves: u64,
     token_total_supply: u64,
+    fee_basis_points: u64,
+    withdraw_authority: Pubkey,
+    enable_migrate: bool,
+    pool_migration_fee: u64,
     creator_fee_basis_points: u64,
+    set_creator_authority: Pubkey,
+    admin_set_creator_authority: Pubkey,
     mayhem_mode_enabled: bool,
     create_v2_enabled: bool,
 }
@@ -643,7 +717,13 @@ fn read_pump_global(idl: &Value, data: &[u8]) -> PumpGlobalSnapshot {
         initial_virtual_sol_reserves: read_global_u64(idl, data, "initial_virtual_sol_reserves"),
         initial_real_token_reserves: read_global_u64(idl, data, "initial_real_token_reserves"),
         token_total_supply: read_global_u64(idl, data, "token_total_supply"),
+        fee_basis_points: read_global_u64(idl, data, "fee_basis_points"),
+        withdraw_authority: read_global_pubkey(idl, data, "withdraw_authority"),
+        enable_migrate: read_global_bool(idl, data, "enable_migrate"),
+        pool_migration_fee: read_global_u64(idl, data, "pool_migration_fee"),
         creator_fee_basis_points: read_global_u64(idl, data, "creator_fee_basis_points"),
+        set_creator_authority: read_global_pubkey(idl, data, "set_creator_authority"),
+        admin_set_creator_authority: read_global_pubkey(idl, data, "admin_set_creator_authority"),
         mayhem_mode_enabled: read_global_bool(idl, data, "mayhem_mode_enabled"),
         create_v2_enabled: read_global_bool(idl, data, "create_v2_enabled"),
     }
@@ -802,7 +882,7 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         "associated_bonding_curve": associated_bonding_curve.to_string(),
         "global_pda": global.to_string(),
         "mayhem_mode": false,
-        "global_config": "created by the pinned Pump SBF initialize instruction; create_v2 enabled by its toggle_create_v2 instruction",
+        "global_config": "created by the pinned Pump SBF initialize instruction; supply configured by set_params; create_v2 enabled by toggle_create_v2",
         "token_program": token_program_id.to_string(),
         "associated_token_program": associated_token_program_id.to_string(),
         "synthetic_payer_lamports": 20_000_000_000u64,
@@ -812,6 +892,7 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         "expected_decimals": TOKEN_DECIMALS,
         "transaction_compute_unit_limit": 400_000,
         "pump_initialize_tested": false,
+        "pump_set_params_tested": false,
         "toggle_create_v2_tested": false,
         "cpi_tested": false,
         "token_creation_tested": false,
@@ -942,7 +1023,10 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     let initial_global_state = read_pump_global(&idl, &initialized_global.data);
     assert!(initial_global_state.initialized);
     assert_eq!(initial_global_state.authority, context.payer.pubkey());
-    assert!(initial_global_state.token_total_supply > 0);
+    assert_eq!(
+        initial_global_state.token_total_supply, 0,
+        "the pinned Pump initialize instruction leaves token_total_supply unset; configure it with set_params"
+    );
     assert!(initial_global_state.initial_virtual_token_reserves > 0);
     assert!(initial_global_state.initial_virtual_sol_reserves > 0);
     assert!(initial_global_state.initial_real_token_reserves > 0);
@@ -954,6 +1038,109 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
         "token_total_supply": initial_global_state.token_total_supply,
         "creator_fee_basis_points": initial_global_state.creator_fee_basis_points,
         "create_v2_enabled_before_toggle": initial_global_state.create_v2_enabled
+    });
+    fs::write(
+        &evidence_file,
+        serde_json::to_vec_pretty(&evidence).unwrap(),
+    )
+    .unwrap();
+
+    let set_params_transaction = Transaction::new_signed_with_payer(
+        &[pump_set_params_instruction(
+            pump_id,
+            global,
+            context.payer.pubkey(),
+            &initial_global_state,
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.last_blockhash,
+    );
+    let set_params_outcome = context
+        .banks_client
+        .process_transaction_with_metadata(set_params_transaction)
+        .await
+        .expect("BanksClient must return the actual Pump set_params result");
+    evidence["pump_set_params_result"] = json!(format!("{:?}", set_params_outcome.result));
+    if let Some(metadata) = &set_params_outcome.metadata {
+        evidence["pump_set_params_logs"] = json!(metadata.log_messages);
+    }
+    evidence["stage"] = json!("pump_set_params_observed");
+    fs::write(
+        &evidence_file,
+        serde_json::to_vec_pretty(&evidence).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        set_params_outcome.result.is_ok(),
+        "The actual Pump set_params instruction must configure Global: {:?}",
+        set_params_outcome.result
+    );
+    evidence["pump_set_params_tested"] = json!(true);
+
+    let configured_global = context
+        .banks_client
+        .get_account(global)
+        .await
+        .unwrap()
+        .expect("the Pump set_params instruction must preserve Global");
+    assert_eq!(configured_global.owner, pump_id);
+    assert!(runtime_rent.is_exempt(configured_global.lamports, configured_global.data.len()));
+    let configured_global_state = read_pump_global(&idl, &configured_global.data);
+    assert!(configured_global_state.initialized);
+    assert_eq!(configured_global_state.authority, context.payer.pubkey());
+    assert_eq!(
+        configured_global_state.token_total_supply,
+        PUMP_TOKEN_TOTAL_SUPPLY
+    );
+    assert_eq!(
+        configured_global_state.initial_virtual_token_reserves,
+        initial_global_state.initial_virtual_token_reserves
+    );
+    assert_eq!(
+        configured_global_state.initial_virtual_sol_reserves,
+        initial_global_state.initial_virtual_sol_reserves
+    );
+    assert_eq!(
+        configured_global_state.initial_real_token_reserves,
+        initial_global_state.initial_real_token_reserves
+    );
+    assert_eq!(
+        configured_global_state.fee_basis_points,
+        initial_global_state.fee_basis_points
+    );
+    assert_eq!(
+        configured_global_state.withdraw_authority,
+        initial_global_state.withdraw_authority
+    );
+    assert_eq!(
+        configured_global_state.enable_migrate,
+        initial_global_state.enable_migrate
+    );
+    assert_eq!(
+        configured_global_state.pool_migration_fee,
+        initial_global_state.pool_migration_fee
+    );
+    assert_eq!(
+        configured_global_state.creator_fee_basis_points,
+        initial_global_state.creator_fee_basis_points
+    );
+    assert_eq!(
+        configured_global_state.set_creator_authority,
+        initial_global_state.set_creator_authority
+    );
+    assert_eq!(
+        configured_global_state.admin_set_creator_authority,
+        initial_global_state.admin_set_creator_authority
+    );
+    evidence["global_params_set_by_pump_sbf"] = json!({
+        "source": "actual pinned Pump SBF set_params instruction",
+        "token_total_supply_before": initial_global_state.token_total_supply,
+        "token_total_supply_after": configured_global_state.token_total_supply,
+        "initial_virtual_token_reserves": configured_global_state.initial_virtual_token_reserves,
+        "initial_virtual_sol_reserves": configured_global_state.initial_virtual_sol_reserves,
+        "initial_real_token_reserves": configured_global_state.initial_real_token_reserves,
+        "creator_fee_basis_points": configured_global_state.creator_fee_basis_points
     });
     fs::write(
         &evidence_file,
@@ -1010,7 +1197,7 @@ async fn real_pump_sbf_create_v2_records_the_probe_creator_pda() {
     assert!(global_state.initial_virtual_sol_reserves > 0);
     assert!(global_state.initial_real_token_reserves > 0);
     evidence["global_config"] = json!({
-        "source": "actual pinned Pump SBF initialize + toggle_create_v2 instructions",
+        "source": "actual pinned Pump SBF initialize + set_params + toggle_create_v2 instructions",
         "account_owner": runtime_global.owner.to_string(),
         "data_len": runtime_global.data.len(),
         "create_v2_enabled": global_state.create_v2_enabled,
